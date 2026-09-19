@@ -58,6 +58,7 @@ const submitRegistration = (): void => {
 }
 
 onMounted(() => {
+  document.documentElement.classList.add('reflow-page-active')
   if (!page.value) return
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   animationContext = gsap.context(() => {
@@ -85,6 +86,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  document.documentElement.classList.remove('reflow-page-active')
   mobileSpeakerTriggers.forEach((trigger) => trigger.kill())
   animationContext?.revert()
 })
@@ -225,10 +227,22 @@ onUnmounted(() => {
   --line: rgba(243, 241, 236, .16);
   --gold: #c9a86a;
   position: relative;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
   isolation: isolate;
   color: var(--text);
   background: var(--bg);
   font-family: 'Helvetica Neue', 'Segoe UI', system-ui, sans-serif;
+}
+
+:global(html.reflow-page-active),
+:global(html.reflow-page-active body) {
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-x: clip;
+  overscroll-behavior-x: none;
 }
 .reflow__canvas { position: fixed; z-index: -2; inset: 0; width: 100%; height: 100svh; }
 .reflow__canvas :deep(canvas) { display: block; width: 100%; height: 100%; }

@@ -3,6 +3,7 @@ uniform float uPulse;
 varying float vOpacity;
 varying float vAccent;
 varying float vDepth;
+varying float vInteraction;
 
 void main() {
   vec2 uv = gl_PointCoord - 0.5;
@@ -17,7 +18,8 @@ void main() {
   vec3 gold = vec3(0.79, 0.66, 0.42);
   vec3 color = mix(neutral, violet, vAccent * smoothstep(0.28, 0.52, uScroll) * 0.45);
   color = mix(color, gold, vAccent * registration * 0.9);
+  color = mix(color, vec3(0.94, 0.89, 0.72), vInteraction * 0.65);
   color += gold * vAccent * uPulse * 0.4;
-  float alpha = (edge * 0.56 + core * 0.44) * vOpacity;
+  float alpha = (edge * 0.56 + core * 0.44) * vOpacity * (1.0 + vInteraction * 0.45);
   gl_FragColor = vec4(color, alpha);
 }

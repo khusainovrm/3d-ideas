@@ -26,6 +26,7 @@ attribute float aAccent;
 varying float vOpacity;
 varying float vAccent;
 varying float vDepth;
+varying float vInteraction;
 
 float easeInOut(float value) {
   return value * value * (3.0 - 2.0 * value);
@@ -52,8 +53,12 @@ void main() {
   reflowPosition += drift * uNoiseStrength * (0.55 + uTransition * 0.8);
 
   float speakerMatch = 1.0 - step(0.25, abs(aSpeaker - uActiveSpeaker));
+  float speakerState = smoothstep(0.30, 0.42, uScroll) * (1.0 - smoothstep(0.53, 0.64, uScroll));
+  float speakerDistance = length(reflowPosition.xy - uInteractionPoint.xy);
+  float speakerLocality = 1.0 - smoothstep(1.15, 3.4, speakerDistance);
+  float speakerInfluence = speakerMatch * speakerLocality * uInteractionStrength * speakerState;
   vec3 speakerTarget = uInteractionPoint + (reflowPosition - uInteractionPoint) * 0.64;
-  reflowPosition = mix(reflowPosition, speakerTarget, speakerMatch * uInteractionStrength);
+  reflowPosition = mix(reflowPosition, speakerTarget, speakerInfluence * 0.16);
 
   if (uFormFocus > -0.5) {
     float fieldGroup = floor(fract(aSeed * 17.31) * 4.0);
@@ -74,10 +79,11 @@ void main() {
 
   reflowPosition.x *= uAspectScale;
   vec4 mvPosition = modelViewMatrix * vec4(reflowPosition, 1.0);
-  gl_PointSize = clamp(uPixelRatio * aSize * (24.0 / max(1.0, -mvPosition.z)), 1.0, 8.0);
+  gl_PointSize = clamp(uPixelRatio * aSize * (1.0 + speakerInfluence * 1.25) * (24.0 / max(1.0, -mvPosition.z)), 1.0, 8.0);
   gl_Position = projectionMatrix * mvPosition;
 
   vOpacity = aOpacity;
   vAccent = aAccent;
   vDepth = clamp((-mvPosition.z - 8.0) / 15.0, 0.0, 1.0);
+  vInteraction = speakerInfluence;
 }
