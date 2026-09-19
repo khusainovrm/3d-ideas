@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import type { Pane } from 'tweakpane'
 import type { ExperimentMeta } from '../config/experiments'
 import type { SceneFactory } from '../three/core/types'
 import { useThreeScene } from '../composables/useThreeScene'
+import { useDebugPane } from '../composables/useDebugPane'
 
 const props = defineProps<{
   meta: ExperimentMeta
@@ -13,61 +13,9 @@ const props = defineProps<{
 }>()
 
 const { container, paused, ready, error, metrics, togglePause, reset } = useThreeScene(props.factory)
-defineExpose({ container })
-const paneHost = ref<HTMLElement | null>(null)
-const debug = ref(window.location.hash === '#debug')
+const { paneHost, debug, toggleDebug } = useDebugPane(metrics)
+defineExpose({ container, paneHost })
 const scrollStyle = computed(() => ({ height: `${props.scrollLength ?? 100}vh` }))
-let pane: Pane | undefined
-let refreshTimer = 0
-
-const syncHash = (): void => {
-  debug.value = window.location.hash === '#debug'
-}
-
-const toggleDebug = (): void => {
-  if (debug.value) history.replaceState(null, '', `${location.pathname}${location.search}`)
-  else location.hash = 'debug'
-  syncHash()
-}
-
-const mountPane = async (): Promise<void> => {
-  if (!debug.value || pane || !paneHost.value) return
-  const { Pane: Tweakpane } = await import('tweakpane')
-  if (!debug.value || !paneHost.value) return
-  pane = new Tweakpane({ title: 'Runtime', container: paneHost.value })
-  pane.addBinding(metrics, 'fps', { readonly: true, label: 'FPS' })
-  pane.addBinding(metrics, 'dpr', { readonly: true, label: 'DPR' })
-  pane.addBinding(metrics, 'quality', { readonly: true, label: 'Quality' })
-  pane.addBinding(metrics, 'particles', { readonly: true, label: 'Particles' })
-  pane.addBinding(metrics, 'calls', { readonly: true, label: 'Calls' })
-  pane.addBinding(metrics, 'triangles', { readonly: true, label: 'Triangles' })
-  pane.addBinding(metrics, 'geometries', { readonly: true, label: 'Geometries' })
-  pane.addBinding(metrics, 'textures', { readonly: true, label: 'Textures' })
-  refreshTimer = window.setInterval(() => pane?.refresh(), 500)
-}
-
-const unmountPane = (): void => {
-  window.clearInterval(refreshTimer)
-  pane?.dispose()
-  pane = undefined
-}
-
-watch(debug, async (isDebug) => {
-  if (isDebug) {
-    await nextTick()
-    await mountPane()
-  } else unmountPane()
-})
-
-onMounted(() => {
-  window.addEventListener('hashchange', syncHash)
-  void mountPane()
-})
-
-onUnmounted(() => {
-  window.removeEventListener('hashchange', syncHash)
-  unmountPane()
-})
 </script>
 
 <template>

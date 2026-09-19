@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import type { Pane } from 'tweakpane'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useThreeScene } from '../../composables/useThreeScene'
+import { useDebugPane } from '../../composables/useDebugPane'
 import { createConferenceJourneyScene } from './scene'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -35,39 +35,19 @@ const testimonials = [
 const partners = ['NORTHSTAR', 'SIGNAL', 'ORBIT', 'VECTOR', 'POLARIS', 'STUDIO 27', 'TIDE'] as const
 
 const page = ref<HTMLElement | null>(null)
-const paneHost = ref<HTMLElement | null>(null)
 const submitted = ref(false)
-const debug = ref(window.location.hash === '#debug')
 const { container, ready, error, metrics } = useThreeScene(createConferenceJourneyScene)
-defineExpose({ container })
+const { debug, paneHost } = useDebugPane(metrics, {
+  title: 'Journey runtime',
+  bindings: [
+    { key: 'fps', label: 'FPS' }, { key: 'dpr', label: 'DPR' }, { key: 'quality', label: 'Quality' },
+    { key: 'scrollProgress', label: 'Progress' }, { key: 'section', label: 'Section' },
+    { key: 'particles', label: 'Particles' }, { key: 'calls', label: 'Draw calls' }, { key: 'triangles', label: 'Triangles' },
+  ],
+})
+defineExpose({ container, paneHost })
 
-let pane: Pane | undefined
-let refreshTimer = 0
 let animationContext: gsap.Context | undefined
-
-const syncHash = (): void => { debug.value = window.location.hash === '#debug' }
-
-const mountPane = async (): Promise<void> => {
-  if (!debug.value || pane || !paneHost.value) return
-  const { Pane: Tweakpane } = await import('tweakpane')
-  if (!debug.value || !paneHost.value) return
-  pane = new Tweakpane({ title: 'Journey runtime', container: paneHost.value })
-  pane.addBinding(metrics, 'fps', { readonly: true, label: 'FPS' })
-  pane.addBinding(metrics, 'dpr', { readonly: true, label: 'DPR' })
-  pane.addBinding(metrics, 'quality', { readonly: true, label: 'Quality' })
-  pane.addBinding(metrics, 'scrollProgress', { readonly: true, label: 'Progress' })
-  pane.addBinding(metrics, 'section', { readonly: true, label: 'Section' })
-  pane.addBinding(metrics, 'particles', { readonly: true, label: 'Particles' })
-  pane.addBinding(metrics, 'calls', { readonly: true, label: 'Draw calls' })
-  pane.addBinding(metrics, 'triangles', { readonly: true, label: 'Triangles' })
-  refreshTimer = window.setInterval(() => pane?.refresh(), 400)
-}
-
-const unmountPane = (): void => {
-  window.clearInterval(refreshTimer)
-  pane?.dispose()
-  pane = undefined
-}
 
 const focusSpeaker = (index: number): void => {
   if (window.matchMedia('(hover: hover)').matches) {
@@ -80,16 +60,7 @@ const submitRegistration = (): void => {
   container.value?.dispatchEvent(new CustomEvent('journeycomplete'))
 }
 
-watch(debug, async (enabled) => {
-  if (!enabled) return unmountPane()
-  await nextTick()
-  await mountPane()
-})
-
 onMounted(() => {
-  window.addEventListener('hashchange', syncHash)
-  void mountPane()
-
   if (!page.value || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return
   animationContext = gsap.context(() => {
     page.value?.querySelectorAll<HTMLElement>('.journey-reveal').forEach((element) => {
@@ -102,9 +73,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('hashchange', syncHash)
   animationContext?.revert()
-  unmountPane()
 })
 </script>
 

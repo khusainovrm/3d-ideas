@@ -55,6 +55,12 @@ export const experiments = [
     technologies: ['Conversion UI', 'ScrollTrigger', 'Shader ocean'], load: 'Medium',
     component: () => import('../experiments/conference-journey/ConferenceJourney.vue'),
   },
+  {
+    slug: 'particle-reflow', index: '08', title: 'Particle Reflow',
+    description: 'Конференционный лендинг, где одна система точек проходит путь от моря до точки назначения.',
+    technologies: ['GPU morphing', 'One Points system', 'ScrollTrigger'], load: 'Medium',
+    component: () => import('../experiments/particle-reflow/ParticleReflow.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>
