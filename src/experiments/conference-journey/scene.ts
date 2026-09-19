@@ -85,7 +85,15 @@ export const createConferenceJourneyScene: SceneFactory = (runtime) => {
   const routeMaterial = new ShaderMaterial({
     vertexShader: routeVertex,
     fragmentShader: routeFragment,
-    uniforms: { uReveal: { value: 0 }, uOpacity: { value: 0 }, uLift: { value: 0 }, uFinish: { value: 0 } },
+    uniforms: {
+      uReveal: { value: 0 },
+      uOpacity: { value: 0 },
+      uLift: { value: 0 },
+      uFinish: { value: 0 },
+      uTime: { value: 0 },
+      uWaveStrength: { value: 0.72 },
+      uMotion: { value: runtime.reducedMotion ? 0.28 : 1 },
+    },
     transparent: true,
     depthWrite: false,
     blending: AdditiveBlending,
@@ -247,11 +255,13 @@ export const createConferenceJourneyScene: SceneFactory = (runtime) => {
       fogColor.copy(currentColor)
       scene.background = currentColor
 
-      oceanMaterial.uniforms.uTime!.value = elapsed * (runtime.reducedMotion ? 0.28 : 1)
+      const sceneTime = elapsed * (runtime.reducedMotion ? 0.28 : 1)
+      const waveStrength = 0.72 - testimonialsCalm * 0.34 - arrival * 0.18
+      oceanMaterial.uniforms.uTime!.value = sceneTime
       oceanMaterial.uniforms.uProgress!.value = progress
       oceanMaterial.uniforms.uNight!.value = night
       oceanMaterial.uniforms.uLight!.value = 0.16 + arrival * 0.84
-      oceanMaterial.uniforms.uWaveStrength!.value = 0.72 - testimonialsCalm * 0.34 - arrival * 0.18
+      oceanMaterial.uniforms.uWaveStrength!.value = waveStrength
       oceanMaterial.uniforms.uFogDensity!.value = 0.021 + night * 0.009 - arrival * 0.011
       oceanMaterial.uniforms.uFogColor!.value.copy(fogColor)
 
@@ -262,6 +272,8 @@ export const createConferenceJourneyScene: SceneFactory = (runtime) => {
       routeMaterial.uniforms.uOpacity!.value = routeOpacity
       routeMaterial.uniforms.uLift!.value = night * 8.5
       routeMaterial.uniforms.uFinish!.value = state.completion
+      routeMaterial.uniforms.uTime!.value = sceneTime
+      routeMaterial.uniforms.uWaveStrength!.value = waveStrength
       starsMaterial.uniforms.uTime!.value = elapsed
       starsMaterial.uniforms.uOpacity!.value = night * 0.92
       starsMaterial.uniforms.uFocus!.value = state.focus
