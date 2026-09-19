@@ -61,6 +61,12 @@ export const experiments = [
     technologies: ['GPU morphing', 'One Points system', 'ScrollTrigger'], load: 'Medium',
     component: () => import('../experiments/particle-reflow/ParticleReflow.vue'),
   },
+  {
+    slug: 'the-thread', index: '09', title: 'The Thread',
+    description: 'Одна пространственная линия проходит через весь конференционный лендинг от горизонта до footer.',
+    technologies: ['Ribbon shader', 'Path morphing', 'Editorial UI'], load: 'Low',
+    component: () => import('../experiments/the-thread/TheThread.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>

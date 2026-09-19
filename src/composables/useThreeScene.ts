@@ -27,6 +27,7 @@ export const useThreeScene = (factory: SceneFactory) => {
     scrollProgress: 0,
     section: 'hero',
     transitionProgress: 0,
+    lineSamples: 0,
   })
 
   let renderer: WebGLRenderer | undefined
@@ -94,6 +95,7 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.scrollProgress = stats?.scrollProgress ?? 0
     metrics.section = stats?.section ?? 'hero'
     metrics.transitionProgress = stats?.transitionProgress ?? 0
+    metrics.lineSamples = stats?.lineSamples ?? 0
   }
 
   let rendererScene = new Scene()

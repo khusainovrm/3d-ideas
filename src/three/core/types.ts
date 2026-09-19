@@ -12,6 +12,7 @@ export interface SceneStats {
   scrollProgress?: number
   section?: string
   transitionProgress?: number
+  lineSamples?: number
 }
 
 export interface ThreeRuntime {

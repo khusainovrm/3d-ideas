@@ -14,6 +14,7 @@ export interface RuntimeMetrics {
   scrollProgress: number
   section: string
   transitionProgress: number
+  lineSamples: number
 }
 
 export type DebugMetricKey = keyof RuntimeMetrics
