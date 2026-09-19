@@ -49,6 +49,12 @@ export const experiments = [
     technologies: ['ScrollTrigger', 'Rain particles', 'GLSL'], load: 'High',
     component: () => import('../experiments/storm-transition/StormTransition.vue'),
   },
+  {
+    slug: 'conference-journey', index: '07', title: 'Conference Journey',
+    description: 'Полноценный конференционный лендинг как непрерывное путешествие к горизонту.',
+    technologies: ['Conversion UI', 'ScrollTrigger', 'Shader ocean'], load: 'Medium',
+    component: () => import('../experiments/conference-journey/ConferenceJourney.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>

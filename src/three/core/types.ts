@@ -9,6 +9,8 @@ export interface FrameInfo {
 
 export interface SceneStats {
   particles?: number
+  scrollProgress?: number
+  section?: string
 }
 
 export interface ThreeRuntime {

@@ -24,6 +24,8 @@ export const useThreeScene = (factory: SceneFactory) => {
     triangles: 0,
     geometries: 0,
     textures: 0,
+    scrollProgress: 0,
+    section: 'hero',
   })
 
   let renderer: WebGLRenderer | undefined
@@ -86,7 +88,10 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.triangles = info.render.triangles
     metrics.geometries = info.memory.geometries
     metrics.textures = info.memory.textures
-    metrics.particles = experiment.stats?.().particles ?? 0
+    const stats = experiment.stats?.()
+    metrics.particles = stats?.particles ?? 0
+    metrics.scrollProgress = stats?.scrollProgress ?? 0
+    metrics.section = stats?.section ?? 'hero'
   }
 
   let rendererScene = new Scene()
