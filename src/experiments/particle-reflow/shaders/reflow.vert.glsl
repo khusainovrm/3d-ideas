@@ -27,6 +27,7 @@ varying float vOpacity;
 varying float vAccent;
 varying float vDepth;
 varying float vInteraction;
+varying float vPointerInfluence;
 
 float easeInOut(float value) {
   return value * value * (3.0 - 2.0 * value);
@@ -86,4 +87,5 @@ void main() {
   vAccent = aAccent;
   vDepth = clamp((-mvPosition.z - 8.0) / 15.0, 0.0, 1.0);
   vInteraction = speakerInfluence;
+  vPointerInfluence = pointerInfluence;
 }
