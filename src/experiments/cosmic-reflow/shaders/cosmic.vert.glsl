@@ -104,11 +104,29 @@ void main() {
     reflowPosition.xy += direction * match * wheelPresence * 0.14;
   }
 
-  vec2 pointerWorld = vec2(uPointer.x * 10.0, uPointer.y * 5.8);
-  vec2 pointerDelta = reflowPosition.xy - pointerWorld;
-  float pointerDistance = length(pointerDelta);
-  float pointerInfluence = smoothstep(2.4, 0.0, pointerDistance) * uPointerStrength * (nebulaPresence + linePresence * 0.35);
-  reflowPosition.xy += normalize(pointerDelta + vec2(0.0001)) * pointerInfluence * 0.23;
+  float planetMask = step(-0.5, aPlanetId);
+  float pointerState = clamp(
+    nebulaPresence +
+    linePresence * 0.55 +
+    galaxyPresence * 0.68 +
+    wheelPresence * 0.58 +
+    logoPresence * 0.42,
+    0.0,
+    1.0
+  );
+  float planetPointerGuard = 1.0 - planetMask * galaxyPresence;
+  vec3 pointerProbePosition = reflowPosition;
+  pointerProbePosition.x *= uAspectScale;
+  vec4 pointerMvPosition = modelViewMatrix * vec4(pointerProbePosition, 1.0);
+  vec4 pointerClipPosition = projectionMatrix * pointerMvPosition;
+  vec2 particleNdc = pointerClipPosition.xy / max(0.0001, pointerClipPosition.w);
+  vec2 pointerDeltaNdc = particleNdc - uPointer;
+  float pointerDistance = length(pointerDeltaNdc);
+  float pointerInfluence = smoothstep(0.3, 0.0, pointerDistance) * uPointerStrength * pointerState * planetPointerGuard;
+  float cameraAspect = projectionMatrix[1][1] / projectionMatrix[0][0];
+  vec2 pointerDirection = normalize(pointerDeltaNdc + vec2(0.0001));
+  pointerDirection.x *= cameraAspect / max(0.001, uAspectScale);
+  reflowPosition.xy += pointerDirection * pointerInfluence * 0.23;
 
   vec2 pulseDirection = normalize(reflowPosition.xy - wheelCenter.xy + vec2(0.0001));
   reflowPosition.xy += pulseDirection * sin(uPulse * 3.14159265) * wheelPresence * 0.65;
@@ -117,7 +135,6 @@ void main() {
   vec4 mvPosition = modelViewMatrix * vec4(reflowPosition, 1.0);
   float focusBoost = speakerBand * linePresence * uSpeakerInfluence * 0.7 + uPulse * wheelPresence * 0.45;
   float logoSize = mix(1.0, 1.32, logoPresence);
-  float planetMask = step(-0.5, aPlanetId);
   float planetHover = planetMask * (1.0 - step(0.25, abs(aPlanetId - uHoveredPlanet)));
   float planetSelected = planetMask * (1.0 - step(0.25, abs(aPlanetId - uSelectedPlanet)));
   float planetPulse = mix(0.0, sin(uTime * 1.25 + aPlanetId * 1.73) * 0.12, 1.0 - uReducedMotion);
