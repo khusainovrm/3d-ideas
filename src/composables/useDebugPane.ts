@@ -18,6 +18,11 @@ export interface RuntimeMetrics {
   surfaceRelief: number
   lightsCount: number
   cameraZ: number
+  terrainSegments: number
+  propsCount: number
+  cameraProgress: number
+  postprocessing: boolean
+  shadows: boolean
 }
 
 export type DebugMetricKey = keyof RuntimeMetrics

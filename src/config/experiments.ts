@@ -73,6 +73,12 @@ export const experiments = [
     technologies: ['Surface shader', 'Light choreography', 'Camera journey'], load: 'Medium',
     component: () => import('../experiments/lights-journey/LightsJourney.vue'),
   },
+  {
+    slug: 'summit-journey', index: '11', title: 'The Summit Journey',
+    description: 'Кинематографичный подъём по живому low-poly ландшафту — от туманной низины к регистрации на вершине.',
+    technologies: ['Low-poly terrain', 'Camera spline', 'Shader flags'], load: 'High',
+    component: () => import('../experiments/summit-journey/SummitJourney.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>

@@ -16,6 +16,11 @@ export interface SceneStats {
   surfaceRelief?: number
   lightsCount?: number
   cameraZ?: number
+  terrainSegments?: number
+  propsCount?: number
+  cameraProgress?: number
+  postprocessing?: boolean
+  shadows?: boolean
 }
 
 export interface ThreeRuntime {

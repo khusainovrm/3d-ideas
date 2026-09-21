@@ -31,6 +31,11 @@ export const useThreeScene = (factory: SceneFactory) => {
     surfaceRelief: 0,
     lightsCount: 0,
     cameraZ: 0,
+    terrainSegments: 0,
+    propsCount: 0,
+    cameraProgress: 0,
+    postprocessing: false,
+    shadows: false,
   })
 
   let renderer: WebGLRenderer | undefined
@@ -102,6 +107,11 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.surfaceRelief = stats?.surfaceRelief ?? 0
     metrics.lightsCount = stats?.lightsCount ?? 0
     metrics.cameraZ = stats?.cameraZ ?? 0
+    metrics.terrainSegments = stats?.terrainSegments ?? 0
+    metrics.propsCount = stats?.propsCount ?? 0
+    metrics.cameraProgress = stats?.cameraProgress ?? 0
+    metrics.postprocessing = stats?.postprocessing ?? false
+    metrics.shadows = stats?.shadows ?? false
   }
 
   let rendererScene = new Scene()
