@@ -24,6 +24,7 @@ import {
   PLANET_INDICES,
   PLANET_POSITIONS,
   sampleLogo,
+  WHEEL_CENTER,
 } from './particles/generators'
 import { getCosmicState, getTransitionProgress, STATE_PROGRESS, type CosmicState } from './states'
 import vertexShader from './shaders/cosmic.vert.glsl?raw'
@@ -44,6 +45,11 @@ const transitionAt = (value: number, start: number, end: number): number => {
   return smooth * smooth * (3 - 2 * smooth)
 }
 
+const smoothstep = (value: number, start: number, end: number): number => {
+  const normalized = Math.min(1, Math.max(0, (value - start) / (end - start)))
+  return normalized * normalized * (3 - 2 * normalized)
+}
+
 const isInteractiveTarget = (target: EventTarget | null): boolean =>
   target instanceof Element && Boolean(target.closest('a, button, input, label, form, .cosmic-tooltip'))
 
@@ -60,6 +66,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     pulse: 0,
     hoveredPlanet: -1,
     selectedPlanet: -1,
+    wheelRotation: 0,
   }
 
   scene.background = new Color('#030309')
@@ -88,6 +95,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       uHoveredPlanet: { value: -1 },
       uSelectedPlanet: { value: -1 },
       uReducedMotion: { value: runtime.reducedMotion ? 1 : 0 },
+      uWheelRotation: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -198,8 +206,11 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   const planetWorldPosition = new Vector3()
   const transformedPlanetPosition = new Vector3()
   const projectedPosition = new Vector3()
+  const wheelCenterWorld = new Vector3()
+  const wheelEdgeWorld = new Vector3()
   let currentShaderTime = 0
   let galaxyVisibility = 0
+  let wheelVisibility = 0
   let pointerClientX = 0
   let pointerClientY = 0
   let pointerKnown = false
@@ -211,6 +222,11 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   let pointerDownAt = 0
   let pointerDownPlanet = -1
   let galaxyWasInteractive = false
+  let wheelDragging = false
+  let wheelPointerId = -1
+  let wheelLastAngle = 0
+  let wheelLastMoveAt = 0
+  let wheelVelocity = 0
 
   const canvas = renderer.domElement
   canvas.tabIndex = -1
@@ -294,7 +310,6 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     if (state.hoveredPlanet === planetId) return
     state.hoveredPlanet = planetId
     material.uniforms.uHoveredPlanet!.value = planetId
-    if (container.parentElement) container.parentElement.style.cursor = planetId >= 0 ? 'pointer' : ''
   }
 
   const selectPlanet = (planetId: number): void => {
@@ -326,6 +341,36 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     tooltip.style.visibility = 'visible'
   }
 
+  const getWheelScreenMetrics = (): { x: number; y: number; radius: number } => {
+    camera.updateMatrixWorld()
+    wheelCenterWorld.set(WHEEL_CENTER[0] * aspectScale, WHEEL_CENTER[1], WHEEL_CENTER[2]).project(camera)
+    wheelEdgeWorld.set((WHEEL_CENTER[0] + 4.65) * aspectScale, WHEEL_CENTER[1], WHEEL_CENTER[2]).project(camera)
+    const centerX = (wheelCenterWorld.x * 0.5 + 0.5) * window.innerWidth
+    const centerY = (-wheelCenterWorld.y * 0.5 + 0.5) * window.innerHeight
+    const edgeX = (wheelEdgeWorld.x * 0.5 + 0.5) * window.innerWidth
+    return { x: centerX, y: centerY, radius: Math.abs(edgeX - centerX) }
+  }
+
+  const isWheelInteractive = (): boolean => wheelVisibility > 0.48 && state.scroll < 0.91
+
+  const hitTestWheel = (clientX: number, clientY: number): boolean => {
+    if (!isWheelInteractive()) return false
+    const wheel = getWheelScreenMetrics()
+    const distance = Math.hypot(clientX - wheel.x, clientY - wheel.y)
+    return distance >= wheel.radius * 0.12 && distance <= wheel.radius + 34
+  }
+
+  const getWheelPointerAngle = (clientX: number, clientY: number): number => {
+    const wheel = getWheelScreenMetrics()
+    return Math.atan2(clientY - wheel.y, clientX - wheel.x)
+  }
+
+  const normalizeAngleDelta = (delta: number): number => {
+    if (delta > Math.PI) return delta - Math.PI * 2
+    if (delta < -Math.PI) return delta + Math.PI * 2
+    return delta
+  }
+
   const setTargetState = (target: CosmicState): void => {
     state.scroll = STATE_PROGRESS[target]
   }
@@ -336,6 +381,19 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     pointerKnown = true
     pointerBlocked = isInteractiveTarget(event.target)
     if (event.pointerType !== 'touch') keyboardPlanet = -1
+    if (wheelDragging && event.pointerId === wheelPointerId) {
+      event.preventDefault()
+      const now = performance.now()
+      const angle = getWheelPointerAngle(event.clientX, event.clientY)
+      const angleDelta = normalizeAngleDelta(angle - wheelLastAngle)
+      const elapsedSeconds = Math.max(1 / 120, (now - wheelLastMoveAt) / 1000)
+      state.wheelRotation += angleDelta
+      const instantVelocity = Math.max(-7, Math.min(7, angleDelta / elapsedSeconds))
+      wheelVelocity = wheelVelocity * 0.32 + instantVelocity * 0.68
+      wheelLastAngle = angle
+      wheelLastMoveAt = now
+      return
+    }
     if (!coarsePointer && !runtime.reducedMotion) {
       pointerTarget.set((event.clientX / window.innerWidth) * 2 - 1, -((event.clientY / window.innerHeight) * 2 - 1))
     }
@@ -344,11 +402,26 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     pointerDownX = event.clientX
     pointerDownY = event.clientY
     pointerDownAt = performance.now()
+    if (event.pointerType === 'mouse' && event.button === 0 && !isInteractiveTarget(event.target) && hitTestWheel(event.clientX, event.clientY)) {
+      wheelDragging = true
+      wheelPointerId = event.pointerId
+      wheelLastAngle = getWheelPointerAngle(event.clientX, event.clientY)
+      wheelLastMoveAt = pointerDownAt
+      wheelVelocity = 0
+      pointerDownPlanet = -1
+      return
+    }
     pointerDownPlanet = isInteractiveTarget(event.target)
       ? -1
       : hitTestPlanet(event.clientX, event.clientY)
   }
   const onPointerUp = (event: PointerEvent): void => {
+    if (wheelDragging && event.pointerId === wheelPointerId) {
+      wheelDragging = false
+      wheelPointerId = -1
+      pointerDownPlanet = -1
+      return
+    }
     if (isInteractiveTarget(event.target)) {
       pointerDownPlanet = -1
       return
@@ -368,6 +441,11 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     } else if (state.selectedPlanet >= 0) {
       selectPlanet(-1)
     }
+  }
+  const onWindowBlur = (): void => {
+    wheelDragging = false
+    wheelPointerId = -1
+    wheelVelocity = 0
   }
   const onCanvasFocus = (): void => {
     if (!isGalaxyInteractive()) return
@@ -428,9 +506,10 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   }
   const onPlanetClose = (): void => selectPlanet(-1)
 
-  window.addEventListener('pointermove', onPointerMove, { passive: true })
+  window.addEventListener('pointermove', onPointerMove, { passive: false })
   window.addEventListener('pointerdown', onPointerDown, { passive: true })
   window.addEventListener('pointerup', onPointerUp, { passive: true })
+  window.addEventListener('blur', onWindowBlur)
   canvas.addEventListener('focus', onCanvasFocus)
   canvas.addEventListener('blur', onCanvasBlur)
   canvas.addEventListener('keydown', onCanvasKeydown)
@@ -440,7 +519,11 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   container.addEventListener('cosmicplanetclose', onPlanetClose)
 
   return {
-    update: ({ elapsed, reducedMotion }) => {
+    update: ({ elapsed, delta, reducedMotion }) => {
+      if (!wheelDragging && Math.abs(wheelVelocity) > 0.0005) {
+        state.wheelRotation += wheelVelocity * delta
+        wheelVelocity *= reducedMotion ? 0 : Math.exp(-delta * 2.35)
+      }
       pointerCurrent.lerp(pointerTarget, 0.04)
       currentShaderTime = elapsed * (reducedMotion ? 0.08 : 1)
       material.uniforms.uTime!.value = currentShaderTime
@@ -453,6 +536,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       material.uniforms.uPulse!.value = state.pulse
       material.uniforms.uHoveredPlanet!.value = state.hoveredPlanet
       material.uniforms.uSelectedPlanet!.value = state.selectedPlanet
+      material.uniforms.uWheelRotation!.value = state.wheelRotation
 
       camera.position.x = pointerCurrent.x * (coarsePointer || reducedMotion ? 0 : 0.07)
       camera.position.y = pointerCurrent.y * (coarsePointer || reducedMotion ? 0 : 0.045)
@@ -460,6 +544,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       const galaxyIn = Math.min(1, Math.max(0, (state.scroll - 0.38) / 0.14))
       const galaxyOut = 1 - Math.min(1, Math.max(0, (state.scroll - 0.64) / 0.15))
       galaxyVisibility = galaxyIn * galaxyOut
+      wheelVisibility = smoothstep(state.scroll, 0.67, 0.79) * (1 - smoothstep(state.scroll, 0.88, 0.98))
       const galaxyInteractive = isGalaxyInteractive()
       canvas.tabIndex = galaxyInteractive ? 0 : -1
       canvas.setAttribute('aria-hidden', galaxyInteractive ? 'false' : 'true')
@@ -477,6 +562,17 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
         if (document.activeElement === canvas) canvas.blur()
       }
       galaxyWasInteractive = galaxyInteractive
+
+      const wheelHover = pointerKnown && !pointerBlocked && hitTestWheel(pointerClientX, pointerClientY)
+      if (container.parentElement) {
+        container.parentElement.style.cursor = wheelDragging
+          ? 'grabbing'
+          : state.hoveredPlanet >= 0
+            ? 'pointer'
+            : wheelHover
+              ? 'grab'
+              : ''
+      }
     },
     resize: (width, height) => {
       aspectScale = Math.min(1, (width / Math.max(1, height)) / 1.35)
@@ -488,6 +584,8 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     },
     reset: () => {
       setTargetState('nebula')
+      state.wheelRotation = 0
+      wheelVelocity = 0
       window.scrollTo({ top: 0, behavior: runtime.reducedMotion ? 'auto' : 'smooth' })
     },
     stats: () => ({
@@ -501,6 +599,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerdown', onPointerDown)
       window.removeEventListener('pointerup', onPointerUp)
+      window.removeEventListener('blur', onWindowBlur)
       canvas.removeEventListener('focus', onCanvasFocus)
       canvas.removeEventListener('blur', onCanvasBlur)
       canvas.removeEventListener('keydown', onCanvasKeydown)

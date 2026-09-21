@@ -12,6 +12,7 @@ uniform float uPulse;
 uniform float uHoveredPlanet;
 uniform float uSelectedPlanet;
 uniform float uReducedMotion;
+uniform float uWheelRotation;
 
 attribute vec3 aLine;
 attribute vec3 aGalaxy;
@@ -82,7 +83,7 @@ void main() {
 
   vec3 wheelCenter = vec3(-3.1, 0.0, 0.0);
   vec3 wheelLocal = reflowPosition - wheelCenter;
-  wheelLocal.xy = rotate2d(0.14 + sin(uTime * 0.16) * 0.025) * wheelLocal.xy;
+  wheelLocal.xy = rotate2d(0.14 + sin(uTime * 0.16) * 0.025 + uWheelRotation) * wheelLocal.xy;
   reflowPosition = mix(reflowPosition, wheelCenter + wheelLocal, wheelPresence);
 
   float driftStrength = mix(0.065, 0.008, logoPresence);
