@@ -11,6 +11,10 @@ varying float vPlanet;
 varying float vPlanetId;
 varying float vPlanetHover;
 varying float vPlanetSelected;
+varying float vLogoOnly;
+varying float vMeteorMask;
+varying float vMeteor;
+varying float vMeteorHead;
 
 vec3 planetColor(float id) {
   if (id < 0.5) return vec3(0.55, 0.90, 1.0);
@@ -43,6 +47,11 @@ void main() {
 
   float twinkle = 0.9 + sin(uTime * 0.8 + vAccent * 41.0) * 0.1 * (1.0 - vLogo);
   float planetHalo = smoothstep(0.5, 0.05, radius) * vPlanet * 0.3;
-  float alpha = ((edge * 0.58 + core * 0.42) * vOpacity + planetHalo) * twinkle * (1.0 + vLogo * 0.34 + vPlanetHover * 0.24);
+  float logoOnlyVisibility = mix(1.0 - vLogoOnly, 1.0, vLogo);
+  float alpha = ((edge * 0.58 + core * 0.42) * vOpacity + planetHalo) * twinkle * (1.0 + vLogo * 0.34 + vPlanetHover * 0.24) * logoOnlyVisibility;
+  vec3 meteorColor = mix(vec3(0.42, 0.76, 1.0), vec3(1.0), vMeteorHead);
+  float meteorAlpha = (edge * 0.32 + core * 0.9) * vMeteor * mix(0.18, 1.0, vMeteorHead);
+  color = mix(color, meteorColor, vMeteorMask);
+  alpha = mix(alpha, meteorAlpha, vMeteorMask);
   gl_FragColor = vec4(color, alpha);
 }

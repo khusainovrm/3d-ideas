@@ -13,6 +13,10 @@ uniform float uHoveredPlanet;
 uniform float uSelectedPlanet;
 uniform float uReducedMotion;
 uniform float uWheelRotation;
+uniform float uMeteorProgress;
+uniform float uMeteorActive;
+uniform vec2 uMeteorStart;
+uniform vec2 uMeteorDirection;
 
 attribute vec3 aLine;
 attribute vec3 aGalaxy;
@@ -25,6 +29,8 @@ attribute float aOpacity;
 attribute float aAccent;
 attribute float aPlanetId;
 attribute float aPlanetSize;
+attribute float aLogoOnly;
+attribute float aMeteorId;
 
 varying float vOpacity;
 varying float vAccent;
@@ -37,6 +43,10 @@ varying float vPlanet;
 varying float vPlanetId;
 varying float vPlanetHover;
 varying float vPlanetSelected;
+varying float vLogoOnly;
+varying float vMeteorMask;
+varying float vMeteor;
+varying float vMeteorHead;
 
 float easeInOut(float value) {
   return value * value * (3.0 - 2.0 * value);
@@ -96,7 +106,6 @@ void main() {
 
   float linePresence = smoothstep(0.16, 0.29, uScroll) * (1.0 - smoothstep(0.35, 0.52, uScroll));
   float speakerBand = 1.0 - smoothstep(0.05, 0.24, abs(aSeed - uSpeakerFocus));
-  reflowPosition.xy += normalize(vec2(0.3, 1.0)) * speakerBand * linePresence * uSpeakerInfluence * 0.12;
 
   if (uFormFocus > -0.5) {
     float sector = floor(fract(aSeed * 13.7) * 4.0);
@@ -144,6 +153,16 @@ void main() {
   gl_PointSize = clamp(uPixelRatio * aSize * (1.0 + focusBoost) * logoSize * planetScale * (25.0 / max(1.0, -mvPosition.z)), 1.0, 29.0);
   gl_Position = projectionMatrix * mvPosition;
 
+  float meteorMask = step(-0.5, aMeteorId);
+  float meteorHead = 1.0 - clamp(aMeteorId / 71.0, 0.0, 1.0);
+  float meteorAge = uMeteorProgress - (aMeteorId / 71.0) * 0.24;
+  float meteorVisible = uMeteorActive * step(0.0, meteorAge) * (1.0 - step(1.08, meteorAge));
+  if (meteorMask > 0.5) {
+    vec2 meteorPosition = uMeteorStart + uMeteorDirection * meteorAge;
+    gl_Position = vec4(meteorPosition, 0.0, 1.0);
+    gl_PointSize = uPixelRatio * mix(1.5, 6.5, meteorHead);
+  }
+
   vOpacity = aOpacity;
   vAccent = aAccent;
   vGalaxy = galaxyPresence;
@@ -155,4 +174,8 @@ void main() {
   vPlanetId = aPlanetId;
   vPlanetHover = planetHover * galaxyPresence;
   vPlanetSelected = planetSelected * galaxyPresence;
+  vLogoOnly = aLogoOnly;
+  vMeteorMask = meteorMask;
+  vMeteor = meteorMask * meteorVisible;
+  vMeteorHead = meteorHead;
 }

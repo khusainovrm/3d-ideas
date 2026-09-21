@@ -38,6 +38,7 @@ const PARTICLE_COUNTS: Record<QualityLevel, number> = {
   medium: 8000,
   high: 16000,
 }
+const METEOR_PARTICLE_COUNT = 72
 
 const transitionAt = (value: number, start: number, end: number): number => {
   const normalized = Math.min(1, Math.max(0, (value - start) / (end - start)))
@@ -48,6 +49,13 @@ const transitionAt = (value: number, start: number, end: number): number => {
 const smoothstep = (value: number, start: number, end: number): number => {
   const normalized = Math.min(1, Math.max(0, (value - start) / (end - start)))
   return normalized * normalized * (3 - 2 * normalized)
+}
+
+const duplicatePositions = (source: Float32Array, extraParticles = 0): Float32Array => {
+  const positions = new Float32Array(source.length * 2 + extraParticles * 3)
+  positions.set(source)
+  positions.set(source, source.length)
+  return positions
 }
 
 const isInteractiveTarget = (target: EventTarget | null): boolean =>
@@ -67,6 +75,8 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     hoveredPlanet: -1,
     selectedPlanet: -1,
     wheelRotation: 0,
+    meteorProgress: 0,
+    meteorActive: 0,
   }
 
   scene.background = new Color('#030309')
@@ -96,6 +106,10 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       uSelectedPlanet: { value: -1 },
       uReducedMotion: { value: runtime.reducedMotion ? 1 : 0 },
       uWheelRotation: { value: 0 },
+      uMeteorProgress: { value: 0 },
+      uMeteorActive: { value: 0 },
+      uMeteorStart: { value: new Vector2() },
+      uMeteorDirection: { value: new Vector2(0.8, -1.6) },
     },
     transparent: true,
     depthWrite: false,
@@ -123,12 +137,13 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       particles.geometry.dispose()
     }
 
-    particleCount = PARTICLE_COUNTS[quality]
+    const primaryParticleCount = PARTICLE_COUNTS[quality]
+    particleCount = primaryParticleCount * 2 + METEOR_PARTICLE_COUNT
     const fallbackLogo = createFallbackLogo(particleCount)
-    const nebulaPositions = generateNebula(particleCount)
-    const linePositions = generateLine(particleCount)
-    const galaxyPositions = generateGalaxy(particleCount)
-    const wheelPositions = generateWheel(particleCount)
+    const nebulaPositions = duplicatePositions(generateNebula(primaryParticleCount), METEOR_PARTICLE_COUNT)
+    const linePositions = duplicatePositions(generateLine(primaryParticleCount), METEOR_PARTICLE_COUNT)
+    const galaxyPositions = duplicatePositions(generateGalaxy(primaryParticleCount), METEOR_PARTICLE_COUNT)
+    const wheelPositions = duplicatePositions(generateWheel(primaryParticleCount), METEOR_PARTICLE_COUNT)
     const geometry = new BufferGeometry()
     geometry.setAttribute('position', new BufferAttribute(nebulaPositions, 3))
     geometry.setAttribute('aLine', new BufferAttribute(linePositions, 3))
@@ -143,12 +158,16 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     const accents = new Float32Array(particleCount)
     const planetIds = new Float32Array(particleCount).fill(-1)
     const planetSizes = new Float32Array(particleCount)
+    const logoOnly = new Float32Array(particleCount)
+    const meteorIds = new Float32Array(particleCount).fill(-1)
     for (let index = 0; index < particleCount; index += 1) {
       const seed = ((index * 16807) % 2147483647) / 2147483647
       seeds[index] = seed
       sizes[index] = index % 173 === 0 ? 3.6 : 0.65 + ((index * 31) % 100) / 100 * 1.35
       opacities[index] = 0.28 + ((index * 47) % 100) / 100 * 0.7
       accents[index] = index % 97 === 0 ? 1 : index % 19 === 0 ? 0.48 : 0
+      logoOnly[index] = index >= primaryParticleCount && index < primaryParticleCount * 2 ? 1 : 0
+      if (index >= primaryParticleCount * 2) meteorIds[index] = index - primaryParticleCount * 2
     }
     PLANET_INDICES.forEach((particleIndex, planetId) => {
       const offset = particleIndex * 3
@@ -169,6 +188,8 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     geometry.setAttribute('aAccent', new BufferAttribute(accents, 1))
     geometry.setAttribute('aPlanetId', new BufferAttribute(planetIds, 1))
     geometry.setAttribute('aPlanetSize', new BufferAttribute(planetSizes, 1))
+    geometry.setAttribute('aLogoOnly', new BufferAttribute(logoOnly, 1))
+    geometry.setAttribute('aMeteorId', new BufferAttribute(meteorIds, 1))
 
     particles = new Points(geometry, material)
     particles.frustumCulled = false
@@ -200,6 +221,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
 
   let pulseTween: gsap.core.Tween | undefined
   let speakerTween: gsap.core.Timeline | gsap.core.Tween | undefined
+  let meteorTween: gsap.core.Tween | undefined
   const raycaster = new Raycaster()
   const rayPointer = new Vector2()
   const rayDelta = new Vector3()
@@ -211,6 +233,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   let currentShaderTime = 0
   let galaxyVisibility = 0
   let wheelVisibility = 0
+  let logoVisibility = 0
   let pointerClientX = 0
   let pointerClientY = 0
   let pointerKnown = false
@@ -431,6 +454,11 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       pointerDownPlanet = -1
       return
     }
+    if (hitTestLogo(event.clientX, event.clientY)) {
+      pointerDownPlanet = -1
+      triggerMeteor()
+      return
+    }
     const planetId = pointerDownPlanet >= 0
       ? pointerDownPlanet
       : hitTestPlanet(event.clientX, event.clientY)
@@ -485,17 +513,12 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
     }
 
     const nextFocus = 0.1 + index * 0.24
-    if (Math.abs(state.speakerFocus - nextFocus) > 0.01 && state.speakerInfluence > 0.05) {
-      const timeline = gsap.timeline()
-      timeline.to(state, { speakerInfluence: 0, duration: 0.12, ease: 'power2.out' })
-      timeline.call(() => { state.speakerFocus = nextFocus })
-      timeline.to(state, { speakerInfluence: 1, duration: 0.3, ease: 'power2.out' })
-      speakerTween = timeline
-      return
-    }
-
-    state.speakerFocus = nextFocus
-    speakerTween = gsap.to(state, { speakerInfluence: 1, duration: 0.3, ease: 'power2.out' })
+    speakerTween = gsap.to(state, {
+      speakerFocus: nextFocus,
+      speakerInfluence: 1,
+      duration: 0.32,
+      ease: 'power2.out',
+    })
   }
   const onFormFocus = (event: Event): void => {
     state.formFocus = (event as CustomEvent<number>).detail
@@ -503,6 +526,39 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
   const onComplete = (): void => {
     pulseTween?.kill()
     pulseTween = gsap.fromTo(state, { pulse: 0 }, { pulse: 1, duration: 0.85, ease: 'power2.out', yoyo: true, repeat: 1 })
+  }
+  const triggerMeteor = (): void => {
+    if (state.meteorActive > 0.5) return
+    const startX = -0.82 + Math.random() * 1.64
+    const startY = 0.35 + Math.random() * 0.52
+    const horizontalDirection = Math.random() < 0.5 ? -1 : 1
+    const directionX = horizontalDirection * (0.55 + Math.random() * 0.65)
+    const directionY = -(1.35 + Math.random() * 0.55)
+    material.uniforms.uMeteorStart!.value.set(startX, startY)
+    material.uniforms.uMeteorDirection!.value.set(directionX, directionY)
+    state.meteorActive = 1
+    state.meteorProgress = 0
+    meteorTween = gsap.to(state, {
+      meteorProgress: 1.18,
+      duration: 1.15 + Math.random() * 0.35,
+      ease: 'none',
+      onComplete: () => {
+        state.meteorActive = 0
+        state.meteorProgress = 0
+      },
+    })
+  }
+
+  const hitTestLogo = (clientX: number, clientY: number): boolean => {
+    if (logoVisibility < 0.8) return false
+    camera.updateMatrixWorld()
+    wheelCenterWorld.set(-8.3 * aspectScale, -4.1, 0).project(camera)
+    wheelEdgeWorld.set(8.3 * aspectScale, 1.9, 0).project(camera)
+    const left = (wheelCenterWorld.x * 0.5 + 0.5) * window.innerWidth
+    const bottom = (-wheelCenterWorld.y * 0.5 + 0.5) * window.innerHeight
+    const right = (wheelEdgeWorld.x * 0.5 + 0.5) * window.innerWidth
+    const top = (-wheelEdgeWorld.y * 0.5 + 0.5) * window.innerHeight
+    return clientX >= left && clientX <= right && clientY >= top && clientY <= bottom
   }
   const onPlanetClose = (): void => selectPlanet(-1)
 
@@ -537,6 +593,8 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       material.uniforms.uHoveredPlanet!.value = state.hoveredPlanet
       material.uniforms.uSelectedPlanet!.value = state.selectedPlanet
       material.uniforms.uWheelRotation!.value = state.wheelRotation
+      material.uniforms.uMeteorProgress!.value = state.meteorProgress
+      material.uniforms.uMeteorActive!.value = state.meteorActive
 
       camera.position.x = pointerCurrent.x * (coarsePointer || reducedMotion ? 0 : 0.07)
       camera.position.y = pointerCurrent.y * (coarsePointer || reducedMotion ? 0 : 0.045)
@@ -545,6 +603,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       const galaxyOut = 1 - Math.min(1, Math.max(0, (state.scroll - 0.64) / 0.15))
       galaxyVisibility = galaxyIn * galaxyOut
       wheelVisibility = smoothstep(state.scroll, 0.67, 0.79) * (1 - smoothstep(state.scroll, 0.88, 0.98))
+      logoVisibility = smoothstep(state.scroll, 0.9, 0.99)
       const galaxyInteractive = isGalaxyInteractive()
       canvas.tabIndex = galaxyInteractive ? 0 : -1
       canvas.setAttribute('aria-hidden', galaxyInteractive ? 'false' : 'true')
@@ -610,6 +669,7 @@ export const createCosmicReflowScene: SceneFactory = (runtime) => {
       if (container.parentElement) container.parentElement.style.cursor = ''
       pulseTween?.kill()
       speakerTween?.kill()
+      meteorTween?.kill()
       scrollTween.scrollTrigger?.kill()
       scrollTween.kill()
       disposeObject(scene)
