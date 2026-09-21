@@ -13,6 +13,9 @@ export interface SceneStats {
   section?: string
   transitionProgress?: number
   lineSamples?: number
+  surfaceRelief?: number
+  lightsCount?: number
+  cameraZ?: number
 }
 
 export interface ThreeRuntime {

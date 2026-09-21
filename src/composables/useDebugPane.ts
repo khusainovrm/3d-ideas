@@ -15,6 +15,9 @@ export interface RuntimeMetrics {
   section: string
   transitionProgress: number
   lineSamples: number
+  surfaceRelief: number
+  lightsCount: number
+  cameraZ: number
 }
 
 export type DebugMetricKey = keyof RuntimeMetrics

@@ -28,6 +28,9 @@ export const useThreeScene = (factory: SceneFactory) => {
     section: 'hero',
     transitionProgress: 0,
     lineSamples: 0,
+    surfaceRelief: 0,
+    lightsCount: 0,
+    cameraZ: 0,
   })
 
   let renderer: WebGLRenderer | undefined
@@ -96,6 +99,9 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.section = stats?.section ?? 'hero'
     metrics.transitionProgress = stats?.transitionProgress ?? 0
     metrics.lineSamples = stats?.lineSamples ?? 0
+    metrics.surfaceRelief = stats?.surfaceRelief ?? 0
+    metrics.lightsCount = stats?.lightsCount ?? 0
+    metrics.cameraZ = stats?.cameraZ ?? 0
   }
 
   let rendererScene = new Scene()

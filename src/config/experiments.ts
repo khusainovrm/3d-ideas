@@ -67,6 +67,12 @@ export const experiments = [
     technologies: ['Ribbon shader', 'Path morphing', 'Editorial UI'], load: 'Low',
     component: () => import('../experiments/the-thread/TheThread.vue'),
   },
+  {
+    slug: 'lights-journey', index: '10', title: 'Lights of the Journey',
+    description: 'Путешествие над живой генеративной поверхностью, где свет ведёт к регистрации.',
+    technologies: ['Surface shader', 'Light choreography', 'Camera journey'], load: 'Medium',
+    component: () => import('../experiments/lights-journey/LightsJourney.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>
