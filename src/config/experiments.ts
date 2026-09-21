@@ -79,6 +79,12 @@ export const experiments = [
     technologies: ['Low-poly terrain', 'Camera spline', 'Shader flags'], load: 'High',
     component: () => import('../experiments/summit-journey/SummitJourney.vue'),
   },
+  {
+    slug: 'cosmic-reflow', index: '12', title: 'Cosmic Reflow',
+    description: 'Единая материя проходит путь от туманности и галактики до штурвала и знака Ростелекома.',
+    technologies: ['GPU morphing', 'Interactive planets', 'GLSL'], load: 'Medium',
+    component: () => import('../experiments/cosmic-reflow/CosmicReflow.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>
