@@ -16,6 +16,21 @@ npm run build
 npm run preview
 ```
 
+Production: [3d-ideas.vercel.app](https://3d-ideas.vercel.app/).
+
+## Vercel
+
+Проект настроен как Vite SPA через `vercel.json`:
+
+- build command — `npm run build`;
+- output directory — `dist`;
+- runtime зафиксирован на Node.js 22;
+- прямые переходы на `/experiments/*` переписываются на `index.html` и обрабатываются Vue Router;
+- хешированные файлы из `/assets/*` получают immutable cache;
+- production source maps не публикуются.
+
+Для деплоя достаточно подключить репозиторий к Vercel или выполнить `vercel --prod`. Дополнительные environment variables проекту не требуются.
+
 Добавьте `#debug` к URL любой сцены, чтобы лениво загрузить Tweakpane с FPS, DPR, quality level, количеством частиц, draw calls, triangles, geometries и textures.
 
 ## Структура

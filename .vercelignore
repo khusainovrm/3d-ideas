@@ -1,0 +1,6 @@
+.DS_Store
+.idea
+coverage
+playwright-report
+test-results
+*.log
