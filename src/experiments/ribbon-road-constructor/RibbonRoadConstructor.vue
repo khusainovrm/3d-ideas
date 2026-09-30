@@ -29,7 +29,7 @@ const importOpen = ref(false)
 const importText = ref('')
 const importError = ref('')
 const precision = ref(1)
-const pointsPerLine = ref(1)
+const pointsPerLine = ref(5)
 const trailingComma = ref(true)
 const includeWrapper = ref(true)
 const copyStatus = ref('')
@@ -195,12 +195,20 @@ const restoreDraft = (): void => {
 const parseImport = (): RouteNode[] => {
   const text = importText.value.trim()
   let values: number[][] = []
-  if (text.startsWith('[') && !text.includes('Vector3')) {
-    const parsed = JSON.parse(text) as unknown
-    if (!Array.isArray(parsed)) throw new Error('JSON должен быть массивом координат.')
-    values = parsed as number[][]
-  } else {
+  if (text.includes('Vector3')) {
     const matches = [...text.matchAll(/new\s+Vector3\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)/g)]
+    values = matches.map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
+  } else if (text.startsWith('[')) {
+    try {
+      const parsed = JSON.parse(text) as unknown
+      if (!Array.isArray(parsed)) throw new Error('JSON должен быть массивом координат.')
+      values = parsed as number[][]
+    } catch {
+      const matches = [...text.matchAll(/\[\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*\]/gi)]
+      values = matches.map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
+    }
+  } else {
+    const matches = [...text.matchAll(/\[\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*\]/gi)]
     values = matches.map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
   }
   if (values.length < 4) throw new Error('Нужно минимум четыре корректные точки.')
@@ -220,18 +228,27 @@ const applyImport = (): void => {
   } catch (cause) { importError.value = cause instanceof Error ? cause.message : 'Не удалось разобрать маршрут.' }
 }
 
+const formatCoordinate = (value: number): string => String(Number(value.toFixed(precision.value)))
+const groupedRows = (values: readonly string[]): string => {
+  const rows: string[] = []
+  for (let index = 0; index < values.length; index += pointsPerLine.value) rows.push(`  ${values.slice(index, index + pointsPerLine.value).join(' ')}`)
+  return rows.join('\n')
+}
+const tupleRows = computed(() => state.nodes.map((node, index) => {
+  const p = node.position
+  const comma = trailingComma.value || index < state.nodes.length - 1 ? ',' : ''
+  return `[${formatCoordinate(p.x)}, ${formatCoordinate(p.y)}, ${formatCoordinate(p.z)}]${comma}`
+}))
+const tupleList = computed(() => groupedRows(tupleRows.value))
+const roadPointConfig = computed(() => `export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [\n${tupleList.value}\n]`)
 const vectorRows = computed(() => state.nodes.map((node, index) => {
   const p = node.position
   const comma = trailingComma.value || index < state.nodes.length - 1 ? ',' : ''
-  return `new Vector3(${p.x.toFixed(precision.value)}, ${p.y.toFixed(precision.value)}, ${p.z.toFixed(precision.value)})${comma}`
+  return `new Vector3(${formatCoordinate(p.x)}, ${formatCoordinate(p.y)}, ${formatCoordinate(p.z)})${comma}`
 }))
-const vectorList = computed(() => {
-  const rows: string[] = []
-  for (let index = 0; index < vectorRows.value.length; index += pointsPerLine.value) rows.push(`  ${vectorRows.value.slice(index, index + pointsPerLine.value).join(' ')}`)
-  return rows.join('\n')
-})
+const vectorList = computed(() => groupedRows(vectorRows.value))
 const completeCurveCode = computed(() => `const makeCurve = (): CatmullRomCurve3 => new CatmullRomCurve3([\n${vectorList.value}\n], false, '${state.splineType}', ${state.tension.toFixed(2)})`)
-const exportPreview = computed(() => includeWrapper.value ? completeCurveCode.value : vectorList.value)
+const exportPreview = computed(() => includeWrapper.value ? roadPointConfig.value : tupleList.value)
 const cameraCode = computed(() => `const CAMERA_CONFIG = ${JSON.stringify(state.camera, null, 2)}`)
 const notifyCopied = (label: string): void => {
   copyStatus.value = `${label} скопирован`
@@ -401,11 +418,12 @@ onUnmounted(() => {
       <div v-else class="panel-body form-stack">
         <h2>Export</h2>
         <label>Precision <select v-model.number="precision"><option :value="1">1 decimal</option><option :value="2">2 decimals</option><option :value="3">3 decimals</option></select></label>
-        <label>Points per line <select v-model.number="pointsPerLine"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option></select></label>
+        <label>Points per line <select v-model.number="pointsPerLine"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option><option :value="5">5</option></select></label>
         <label class="check"><input v-model="trailingComma" type="checkbox" /> Include trailing comma</label>
-        <label class="check"><input v-model="includeWrapper" type="checkbox" /> Include makeCurve wrapper</label>
+        <label class="check"><input v-model="includeWrapper" type="checkbox" /> Include export declaration</label>
         <textarea class="code-preview" readonly :value="exportPreview" />
-        <button class="primary" @click="copy(vectorList, 'Vector3 list')">Copy Vector3 list</button>
+        <button class="primary" @click="copy(roadPointConfig, 'ROAD_POINT_VALUES')">Copy ROAD_POINT_VALUES</button>
+        <button @click="copy(tupleList, 'Tuple list')">Copy tuple list</button>
         <button @click="copy(completeCurveCode, 'makeCurve')">Copy complete makeCurve()</button>
         <button @click="copy(JSON.stringify(state.nodes.map(node => Object.values(node.position)), null, 2), 'JSON')">Copy JSON</button>
         <button @click="downloadJson">Download JSON</button>
@@ -426,7 +444,7 @@ onUnmounted(() => {
     </footer>
 
     <div v-if="importOpen" class="constructor-modal" @click.self="importOpen = false">
-      <section><header><h2>Import route</h2><button @click="importOpen = false">×</button></header><textarea v-model="importText" placeholder="JSON или new Vector3(...)" /><p v-if="importError">{{ importError }}</p><button class="primary" @click="applyImport">Apply route</button></section>
+      <section><header><h2>Import route</h2><button @click="importOpen = false">×</button></header><textarea v-model="importText" placeholder="ROAD_POINT_VALUES, JSON или new Vector3(...)" /><p v-if="importError">{{ importError }}</p><button class="primary" @click="applyImport">Apply route</button></section>
     </div>
     <div v-if="debug" ref="paneHost" class="constructor-debug" />
     <div v-if="!ready && !error" class="constructor-status">Building editor…</div>

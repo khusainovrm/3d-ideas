@@ -1,7 +1,9 @@
 uniform float uPurplePhase;
 uniform float uHover;
 uniform float uPulse;
-uniform float uHideDistance;
+uniform float uFadeStart;
+uniform float uFadeEnd;
+uniform float uFadeStrength;
 
 varying vec3 vNormal;
 varying vec3 vWorldPosition;
@@ -16,7 +18,7 @@ void main() {
   float rim = pow(1.0 - abs(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0))), 2.2);
   float pulse = exp(-abs(fract(vWorldPosition.z * 0.035) - uPulse) * 18.0);
   float shade = 0.48 + diffuse * 0.48 + rim * (0.08 + uHover * 0.08) + vWave * 2.0;
-  float distanceFade = 1.0 - smoothstep(8.5, 14.0, distance(vWorldPosition, cameraPosition));
-  float alpha = mix(1.0, distanceFade, uHideDistance);
+  float distanceFade = 1.0 - smoothstep(uFadeStart, uFadeEnd, distance(vWorldPosition, cameraPosition));
+  float alpha = mix(1.0, distanceFade, uFadeStrength);
   gl_FragColor = vec4(base * shade + pulse * vec3(0.25, 0.12, 0.02), alpha);
 }

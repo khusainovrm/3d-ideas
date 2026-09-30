@@ -34,6 +34,7 @@ import {
   JOURNEY_END,
   JOURNEY_START,
   ROAD_THICKNESS,
+  ROAD_VISIBILITY,
   createRibbonGeometry,
   createRoadCurve,
   getRoadFrame,
@@ -190,7 +191,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     fragmentShader: ribbonFragmentShader,
     uniforms: {
       uTime: { value: 0 }, uMotion: { value: runtime.reducedMotion ? 0.15 : 1 },
-      uPurplePhase: { value: 0 }, uHover: { value: 0 }, uPulse: { value: -1 }, uHideDistance: { value: 1 },
+      uPurplePhase: { value: 0 }, uHover: { value: 0 }, uPulse: { value: -1 },
+      uFadeStart: { value: ROAD_VISIBILITY.visibleDistance },
+      uFadeEnd: { value: ROAD_VISIBILITY.visibleDistance + ROAD_VISIBILITY.fadeSoftness },
+      uFadeStrength: { value: ROAD_VISIBILITY.strength },
     },
     side: FrontSide,
     transparent: true,
@@ -346,7 +350,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
       ribbonMaterial.uniforms.uHover!.value = state.hover
       ribbonMaterial.uniforms.uPulse!.value = state.pulse > 0 ? state.pulse : -1
-      ribbonMaterial.uniforms.uHideDistance!.value = 0.2 + heroSideView * 0.8
       portalMaterial.uniforms.uTime!.value = elapsed
       portalMaterial.uniforms.uStrength!.value = smoothstep(0.34, 0.49, state.scroll) * (1 - smoothstep(0.73, 0.84, state.scroll))
       portal.scale.setScalar(0.84 + Math.sin(elapsed * 0.6) * 0.018 + purplePhase * 0.16)
