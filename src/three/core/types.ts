@@ -30,6 +30,13 @@ export interface SceneStats {
   ballPosition?: string
   ballLag?: number
   ballRotationSpeed?: number
+  nodeCount?: number
+  selectedNode?: number
+  editorMode?: string
+  dragging?: boolean
+  historyIndex?: number
+  cameraPosition?: string
+  cameraTarget?: string
 }
 
 export interface ThreeRuntime {

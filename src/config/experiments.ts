@@ -91,6 +91,12 @@ export const experiments = [
     technologies: ['Volumetric ribbon', 'Fake physics', 'GLSL morphing'], load: 'Medium',
     component: () => import('../experiments/ribbon-road/RibbonRoad.vue'),
   },
+  {
+    slug: 'ribbon-road-constructor', index: '14', title: 'Ribbon Road Constructor',
+    description: 'Визуальный редактор пространственного маршрута с узлами, камерой и живым preview движения.',
+    technologies: ['TransformControls', 'Curve editor', 'Live preview'], load: 'Medium',
+    component: () => import('../experiments/ribbon-road-constructor/RibbonRoadConstructor.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>

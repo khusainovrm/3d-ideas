@@ -2,6 +2,9 @@ uniform float uTime;
 uniform float uState;
 uniform float uPixelRatio;
 uniform float uVisibility;
+uniform vec2 uPointer;
+uniform vec2 uViewport;
+uniform float uPointerStrength;
 
 attribute vec3 aAbout;
 attribute vec3 aProgram;
@@ -12,6 +15,7 @@ attribute float aSize;
 
 varying float vAlpha;
 varying float vAccent;
+varying float vPointer;
 
 vec3 statePosition(float state) {
   if (state < 1.0) return mix(position, aAbout, smoothstep(0.0, 1.0, state));
@@ -25,9 +29,15 @@ void main() {
   p.x += sin(uTime * 0.16 + aSeed * 19.0) * 0.035;
   p.y += cos(uTime * 0.13 + aSeed * 23.0) * 0.03;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  vec4 clip = projectionMatrix * mv;
+  vec2 particleNdc = clip.xy / max(0.0001, clip.w);
+  vec2 pointerDeltaPx = (particleNdc - uPointer) * 0.5 * uViewport;
+  float pointerDistancePx = max(abs(pointerDeltaPx.x), abs(pointerDeltaPx.y));
+  float pointerInfluence = (1.0 - smoothstep(26.0, 30.0, pointerDistancePx)) * uPointerStrength;
   float perspective = 28.0 / max(2.0, -mv.z);
   gl_PointSize = min(7.0, aSize * uPixelRatio * perspective);
-  gl_Position = projectionMatrix * mv;
+  gl_Position = clip;
   vAlpha = uVisibility * (0.22 + fract(aSeed * 31.7) * 0.48);
   vAccent = step(0.965, aSeed);
+  vPointer = pointerInfluence;
 }

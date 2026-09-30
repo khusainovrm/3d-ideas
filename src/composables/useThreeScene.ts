@@ -45,6 +45,13 @@ export const useThreeScene = (factory: SceneFactory) => {
     ballPosition: '0.0, 0.0, 0.0',
     ballLag: 0,
     ballRotationSpeed: 0,
+    nodeCount: 0,
+    selectedNode: -1,
+    editorMode: 'edit',
+    dragging: false,
+    historyIndex: 0,
+    cameraPosition: '0.0, 0.0, 0.0',
+    cameraTarget: '0.0, 0.0, 0.0',
   })
 
   let renderer: WebGLRenderer | undefined
@@ -130,6 +137,13 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.ballPosition = stats?.ballPosition ?? '0.0, 0.0, 0.0'
     metrics.ballLag = stats?.ballLag ?? 0
     metrics.ballRotationSpeed = stats?.ballRotationSpeed ?? 0
+    metrics.nodeCount = stats?.nodeCount ?? 0
+    metrics.selectedNode = stats?.selectedNode ?? -1
+    metrics.editorMode = stats?.editorMode ?? 'edit'
+    metrics.dragging = stats?.dragging ?? false
+    metrics.historyIndex = stats?.historyIndex ?? 0
+    metrics.cameraPosition = stats?.cameraPosition ?? '0.0, 0.0, 0.0'
+    metrics.cameraTarget = stats?.cameraTarget ?? '0.0, 0.0, 0.0'
   }
 
   let rendererScene = new Scene()

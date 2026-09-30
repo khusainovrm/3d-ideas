@@ -5,17 +5,18 @@ import {
   AmbientLight,
   BufferAttribute,
   BufferGeometry,
-  CatmullRomCurve3,
   Color,
   DirectionalLight,
   DoubleSide,
   FrontSide,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   Points,
   Quaternion,
   ShaderMaterial,
   SphereGeometry,
+  Vector2,
   Vector3,
 } from 'three'
 import type { SceneFactory } from '../../three/core/types'
@@ -27,6 +28,16 @@ import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import portalVertexShader from './shaders/portal.vert.glsl?raw'
 import portalFragmentShader from './shaders/portal.frag.glsl?raw'
+import {
+  BALL_RADIUS,
+  BALL_SURFACE_GAP,
+  JOURNEY_END,
+  JOURNEY_START,
+  ROAD_THICKNESS,
+  createRibbonGeometry,
+  createRoadCurve,
+  getRoadFrame,
+} from './route'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -44,14 +55,7 @@ type RoadSection = keyof typeof ROAD_SECTIONS
 const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
-const ROAD_WIDTH = 1.825
-const ROAD_THICKNESS = 0.23
-const BALL_RADIUS = 0.46
-const BALL_SURFACE_GAP = 0.025
-const JOURNEY_START = 0.15
-const JOURNEY_END = 0.82
 const PORTAL_PROGRESS = JOURNEY_START + ROAD_SECTIONS.speakers[0] * (JOURNEY_END - JOURNEY_START) + 0.02
-const UP = new Vector3(0, 1, 0)
 const FORWARD = new Vector3(0, 0, 1)
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
@@ -81,91 +85,6 @@ const particleMorphAt = (progress: number): number => {
   return 3 + smoothstep(0.89, 0.98, progress)
 }
 
-const makeCurve = (): CatmullRomCurve3 => new CatmullRomCurve3([
-  new Vector3(-4.0, 7.0, 18), new Vector3(-3.5, 6.5, 13), new Vector3(-3.0, 6.0, 8),
-  new Vector3(-2.2, 5.5, 4), new Vector3(-1.0, 5.0, 0), new Vector3(0.5, 4.5, -4),
-  new Vector3(1.8, 3.5, -8), new Vector3(2.8, 2.5, -12), new Vector3(3.2, 2.0, -16),
-  new Vector3(3.0, 1.5, -20), new Vector3(2.3, 0.5, -24), new Vector3(1.2, -0.5, -28),
-  new Vector3(0.0, -1.0, -32), new Vector3(-1.2, -1.5, -36), new Vector3(-2.2, -2.5, -40),
-  new Vector3(-3.0, -3.5, -44), new Vector3(-3.2, -4.0, -48), new Vector3(-3.0, -5.0, -52),
-  new Vector3(-2.3, -6.0, -56), new Vector3(-1.2, -6.5, -60), new Vector3(0.0, -7.0, -64),
-  new Vector3(1.0, -8.0, -68), new Vector3(1.8, -9.0, -72), new Vector3(2.3, -9.5, -76),
-  new Vector3(2.5, -10.0, -81), new Vector3(2.2, -11.0, -86), new Vector3(1.5, -11.5, -91),
-  new Vector3(0.7, -12.2, -96), new Vector3(0.0, -13.0, -102),
-], false, 'centripetal', 0.5)
-
-const createRibbonGeometry = (curve: CatmullRomCurve3, steps: number): BufferGeometry => {
-  const geometry = new BufferGeometry()
-  const positions = new Float32Array((steps + 1) * 8 * 3)
-  const normals = new Float32Array((steps + 1) * 8 * 3)
-  const indices = new Uint32Array(steps * 4 * 6)
-  const tangent = new Vector3()
-  const up = new Vector3()
-  const right = new Vector3()
-  const center = new Vector3()
-  const topLeft = new Vector3()
-  const topRight = new Vector3()
-  const bottomLeft = new Vector3()
-  const bottomRight = new Vector3()
-
-  const write = (vertex: number, value: Vector3): void => {
-    positions[vertex * 3] = value.x
-    positions[vertex * 3 + 1] = value.y
-    positions[vertex * 3 + 2] = value.z
-  }
-  const writeNormal = (vertex: number, value: Vector3): void => {
-    normals[vertex * 3] = value.x
-    normals[vertex * 3 + 1] = value.y
-    normals[vertex * 3 + 2] = value.z
-  }
-
-  for (let index = 0; index <= steps; index += 1) {
-    const progress = index / steps
-    curve.getPointAt(progress, center)
-    curve.getTangentAt(progress, tangent).normalize()
-    up.copy(UP).addScaledVector(tangent, -UP.dot(tangent)).normalize()
-    right.crossVectors(tangent, up).normalize()
-    topLeft.copy(center).addScaledVector(up, ROAD_THICKNESS / 2).addScaledVector(right, -ROAD_WIDTH / 2)
-    topRight.copy(center).addScaledVector(up, ROAD_THICKNESS / 2).addScaledVector(right, ROAD_WIDTH / 2)
-    bottomLeft.copy(center).addScaledVector(up, -ROAD_THICKNESS / 2).addScaledVector(right, -ROAD_WIDTH / 2)
-    bottomRight.copy(center).addScaledVector(up, -ROAD_THICKNESS / 2).addScaledVector(right, ROAD_WIDTH / 2)
-
-    const base = index * 8
-    write(base, topLeft); write(base + 1, topRight)
-    write(base + 2, bottomRight); write(base + 3, bottomLeft)
-    write(base + 4, bottomLeft); write(base + 5, topLeft)
-    write(base + 6, topRight); write(base + 7, bottomRight)
-    writeNormal(base, up); writeNormal(base + 1, up)
-    up.multiplyScalar(-1)
-    writeNormal(base + 2, up); writeNormal(base + 3, up)
-    up.multiplyScalar(-1)
-    right.multiplyScalar(-1)
-    writeNormal(base + 4, right); writeNormal(base + 5, right)
-    right.multiplyScalar(-1)
-    writeNormal(base + 6, right); writeNormal(base + 7, right)
-  }
-
-  for (let index = 0; index < steps; index += 1) {
-    const current = index * 8
-    const next = (index + 1) * 8
-    for (let face = 0; face < 4; face += 1) {
-      const a = current + face * 2
-      const b = a + 1
-      const c = next + face * 2
-      const d = c + 1
-      const offset = (index * 4 + face) * 6
-      indices[offset] = a; indices[offset + 1] = b; indices[offset + 2] = c
-      indices[offset + 3] = c; indices[offset + 4] = b; indices[offset + 5] = d
-    }
-  }
-
-  geometry.setAttribute('position', new BufferAttribute(positions, 3))
-  geometry.setAttribute('normal', new BufferAttribute(normals, 3))
-  geometry.setIndex(new BufferAttribute(indices, 1))
-  geometry.computeBoundingSphere()
-  return geometry
-}
-
 const seeded = (index: number, salt: number): number => {
   const value = Math.sin(index * 91.713 + salt * 17.17) * 43758.5453
   return value - Math.floor(value)
@@ -184,25 +103,25 @@ const buildParticleGeometry = (count: number): BufferGeometry => {
   for (let index = 0; index < count; index += 1) {
     const a = seeded(index, 1) * Math.PI * 2
     const b = seeded(index, 2)
-    const z = -2.5 - seeded(index, 3) * 16
+    const z = (seeded(index, 3) - 0.5) * 22
     const radius = 2.2 + b * 7.5
-    hero.set([Math.cos(a) * radius, Math.sin(a) * radius * 0.65, z], index * 3)
+    hero.set([Math.cos(a) * radius, 1.2 + Math.sin(a) * radius * 0.52, z], index * 3)
 
     const helix = index / count * Math.PI * 7
-    about.set([Math.cos(helix) * (2.4 + b * 2.8), (b - 0.5) * 9, -3 - seeded(index, 4) * 15], index * 3)
+    about.set([Math.cos(helix) * (2.2 + b * 2.4), 1.5 + Math.sin(helix) * (1.2 + b * 2.8), (seeded(index, 4) - 0.5) * 22], index * 3)
 
     const lane = index % 5
-    program.set([(lane - 2) * 1.65 + (b - 0.5) * 0.45, (seeded(index, 5) - 0.5) * 9, -3 - seeded(index, 6) * 15], index * 3)
+    program.set([(lane - 2) * 1.35 + (b - 0.5) * 0.35, 0.7 + seeded(index, 5) * 5.5, (seeded(index, 6) - 0.5) * 24], index * 3)
 
     const cluster = index % 4
     const cx = cluster % 2 === 0 ? -3.4 : 3.4
     const cy = cluster < 2 ? 2.3 : -2.3
-    registration.set([cx + (b - 0.5) * 2.2, cy + (seeded(index, 7) - 0.5) * 2.2, -4 - seeded(index, 8) * 13], index * 3)
+    registration.set([cx + (b - 0.5) * 2.2, 1.2 + cy + (seeded(index, 7) - 0.5) * 2.2, (seeded(index, 8) - 0.5) * 20], index * 3)
 
     const columns = 14
     const column = index % columns
     const row = Math.floor(index / columns) % 12
-    partners.set([(column - (columns - 1) / 2) * 0.72, (row - 5.5) * 0.64, -5 - Math.floor(index / (columns * 12)) * 1.35], index * 3)
+    partners.set([(column - (columns - 1) / 2) * 0.72, 1.2 + (row - 5.5) * 0.64, (Math.floor(index / (columns * 12)) - 3) * 1.35], index * 3)
     seeds[index] = seeded(index, 9)
     sizes[index] = 1.3 + seeded(index, 10) * 2.1
   }
@@ -217,18 +136,13 @@ const buildParticleGeometry = (count: number): BufferGeometry => {
   return geometry
 }
 
-const surfaceFrame = (curve: CatmullRomCurve3, progress: number, tangent: Vector3, normal: Vector3, right: Vector3): void => {
-  curve.getTangentAt(clamp01(progress), tangent).normalize()
-  normal.copy(UP).addScaledVector(tangent, -UP.dot(tangent)).normalize()
-  right.crossVectors(tangent, normal).normalize()
-}
-
 export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const { scene, camera, renderer, container } = runtime
-  const curve = makeCurve()
+  const curve = createRoadCurve()
   const state = { scroll: 0, hover: 0, pulse: 0, speakerPhase: 0 }
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches
-  const pointer = { x: 0, smoothX: 0 }
+  const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
+  const shaderPointer = new Vector2()
   const black = new Color('#070708')
   const purple = new Color('#1c0d3a')
   const background = new Color(black)
@@ -243,6 +157,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const ballPrevious = new Vector3()
   const rotationAxis = new Vector3()
   const rotationStep = new Quaternion()
+  const particleMatrix = new Matrix4()
+  const particleRight = new Vector3()
+  const particleAnchor = new Vector3()
   const portalTangent = curve.getTangentAt(PORTAL_PROGRESS).normalize()
   let ballProgress = JOURNEY_START + 0.02
   let ballVelocity = 0
@@ -283,6 +200,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     fragmentShader: particleFragmentShader,
     uniforms: {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
+      uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
     },
     transparent: true,
     depthWrite: false,
@@ -310,12 +228,11 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     ribbon.frustumCulled = false
     scene.add(ribbon)
 
-    if (particles) { camera.remove(particles); particles.geometry.dispose() }
+    if (particles) { particles.parent?.remove(particles); particles.geometry.dispose() }
     particleCount = PARTICLE_COUNTS[quality]
     particles = new Points(buildParticleGeometry(particleCount), particleMaterial)
     particles.frustumCulled = false
-    particles.position.z = -0.5
-    camera.add(particles)
+    scene.add(particles)
 
     if (ball) { scene.remove(ball); ball.geometry.dispose() }
     const segments = BALL_SEGMENTS[quality]
@@ -324,7 +241,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       new MeshStandardMaterial({ color: ballMilk, roughness: 0.66, metalness: 0.0, emissive: '#000000', emissiveIntensity: 0.2 }),
     )
     ball.renderOrder = 3
-    surfaceFrame(curve, ballProgress, tangent, normal, right)
+    getRoadFrame(curve, ballProgress, tangent, normal, right)
     ball.position.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_THICKNESS / 2 + BALL_RADIUS + BALL_SURFACE_GAP)
     ballPrevious.copy(ball.position)
     scene.add(ball)
@@ -360,7 +277,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   }
   const onPointerMove = (event: PointerEvent): void => {
     if (coarsePointer) return
-    pointer.x = event.clientX / Math.max(1, window.innerWidth) - 0.5
+    pointer.x = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1
+    pointer.y = -((event.clientY / Math.max(1, window.innerHeight)) * 2 - 1)
   }
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   container.addEventListener('roadnavfocus', onNavFocus)
@@ -369,6 +287,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
       pointer.smoothX += (pointer.x - pointer.smoothX) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
+      pointer.smoothY += (pointer.y - pointer.smoothY) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
+      shaderPointer.set(pointer.smoothX, pointer.smoothY)
       const targetProgress = clamp01(journeyProgress(state.scroll) + 0.02)
       const previousProgress = ballProgress
       const damping = reducedMotion ? 18 : state.scroll > 0.78 ? 6.5 : 4.6
@@ -377,7 +297,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       ballVelocity = (ballProgress - previousProgress) / Math.max(delta, 0.001)
       rotationSpeed = Math.abs(ballVelocity) * curve.getLength() / BALL_RADIUS
 
-      surfaceFrame(curve, ballProgress, tangent, normal, right)
+      getRoadFrame(curve, ballProgress, tangent, normal, right)
       point.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_THICKNESS / 2 + BALL_RADIUS + BALL_SURFACE_GAP)
       if (ball) {
         const distance = point.distanceTo(ballPrevious)
@@ -396,14 +316,14 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       violetLight.intensity = purplePhase * 3.8
 
       const cameraProgress = journeyProgress(state.scroll)
-      surfaceFrame(curve, cameraProgress, tangent, normal, right)
+      getRoadFrame(curve, cameraProgress, tangent, normal, right)
       cameraTarget.copy(curve.getPointAt(cameraProgress))
       const heroSideView = 1 - smoothstep(0.0, 0.19, state.scroll)
       camera.position.copy(cameraTarget)
         .addScaledVector(tangent, -7.4 * (1 - heroSideView))
         .addScaledVector(normal, 4.2)
         .addScaledVector(right, heroSideView * 5.6 + Math.sin(state.scroll * Math.PI * 4) * 0.45)
-        .addScaledVector(right, coarsePointer || reducedMotion ? 0 : pointer.smoothX * 0.8)
+        .addScaledVector(right, coarsePointer || reducedMotion ? 0 : pointer.smoothX * 0.4)
       const lookAhead = 0.012 + (1 - heroSideView) * 0.033
       lookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
       camera.lookAt(lookAt)
@@ -412,6 +332,16 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
       particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
       particleMaterial.uniforms.uVisibility!.value = particlesVisibility
+      particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
+      if (particles) {
+        const anchorProgress = clamp01(ballProgress + 0.008)
+        getRoadFrame(curve, anchorProgress, tangent, normal, right)
+        particleAnchor.copy(curve.getPointAt(anchorProgress)).addScaledVector(normal, 0.5)
+        particleRight.copy(right).multiplyScalar(-1)
+        particleMatrix.makeBasis(particleRight, normal, tangent)
+        particles.position.copy(particleAnchor)
+        particles.quaternion.setFromRotationMatrix(particleMatrix)
+      }
       ribbonMaterial.uniforms.uTime!.value = elapsed
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
       ribbonMaterial.uniforms.uHover!.value = state.hover
@@ -428,8 +358,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         ball.material.emissiveIntensity = purplePhase * 0.22 + state.pulse * 0.45
       }
     },
-    resize: (_width, _height) => {
+    resize: (width, height) => {
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
+      particleMaterial.uniforms.uViewport!.value.set(width, height)
     },
     setQuality: (quality, profile) => {
       buildQuality(quality)
