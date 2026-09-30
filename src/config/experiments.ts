@@ -85,6 +85,12 @@ export const experiments = [
     technologies: ['GPU morphing', 'Interactive planets', 'GLSL'], load: 'Medium',
     component: () => import('../experiments/cosmic-reflow/CosmicReflow.vue'),
   },
+  {
+    slug: 'ribbon-road', index: '13', title: 'Ribbon Road',
+    description: 'Объёмная дорога ведёт шар-путешественник сквозь частицы и фиолетовый портал к регистрации.',
+    technologies: ['Volumetric ribbon', 'Fake physics', 'GLSL morphing'], load: 'Medium',
+    component: () => import('../experiments/ribbon-road/RibbonRoad.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>

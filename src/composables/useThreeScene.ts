@@ -36,6 +36,15 @@ export const useThreeScene = (factory: SceneFactory) => {
     cameraProgress: 0,
     postprocessing: false,
     shadows: false,
+    ribbonProgress: 0,
+    particleState: 'hero',
+    particlesVisible: true,
+    purplePhase: false,
+    ballProgress: 0,
+    ballVelocity: 0,
+    ballPosition: '0.0, 0.0, 0.0',
+    ballLag: 0,
+    ballRotationSpeed: 0,
   })
 
   let renderer: WebGLRenderer | undefined
@@ -112,6 +121,15 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.cameraProgress = stats?.cameraProgress ?? 0
     metrics.postprocessing = stats?.postprocessing ?? false
     metrics.shadows = stats?.shadows ?? false
+    metrics.ribbonProgress = stats?.ribbonProgress ?? 0
+    metrics.particleState = stats?.particleState ?? 'hero'
+    metrics.particlesVisible = stats?.particlesVisible ?? true
+    metrics.purplePhase = stats?.purplePhase ?? false
+    metrics.ballProgress = stats?.ballProgress ?? 0
+    metrics.ballVelocity = stats?.ballVelocity ?? 0
+    metrics.ballPosition = stats?.ballPosition ?? '0.0, 0.0, 0.0'
+    metrics.ballLag = stats?.ballLag ?? 0
+    metrics.ballRotationSpeed = stats?.ballRotationSpeed ?? 0
   }
 
   let rendererScene = new Scene()

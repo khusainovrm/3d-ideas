@@ -21,6 +21,15 @@ export interface SceneStats {
   cameraProgress?: number
   postprocessing?: boolean
   shadows?: boolean
+  ribbonProgress?: number
+  particleState?: string
+  particlesVisible?: boolean
+  purplePhase?: boolean
+  ballProgress?: number
+  ballVelocity?: number
+  ballPosition?: string
+  ballLag?: number
+  ballRotationSpeed?: number
 }
 
 export interface ThreeRuntime {
