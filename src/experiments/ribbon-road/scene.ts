@@ -1,4 +1,5 @@
 import gsap from 'gsap'
+import { watch } from 'vue'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   AdditiveBlending,
@@ -30,13 +31,8 @@ import ribbonFragmentShader from './shaders/ribbon.frag.glsl?raw'
 import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import { generateHeroCloud } from './heroCloud'
-import {
-  generateNavigationFigures,
-  navigationFigureCenter,
-  navigationMobileFigureCenter,
-  NAV_LAYOUT_SCALE_X,
-  NAV_LAYOUT_SCALE_Y,
-} from './navFigures'
+import { generateNavigationFigures } from './navFigures'
+import { createNavigationLayout } from './navLayout'
 import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
 import type { RoadSectionId } from './navigation'
 import { roadPointValuesAt } from './roadPaths'
@@ -160,6 +156,22 @@ const buildParticleGeometry = (count: number, journeyCount: number, quality: Qua
   geometry.setAttribute('aHeroDrift', new BufferAttribute(hero.drift, 1))
   geometry.setAttribute('aNavTarget', new BufferAttribute(navigation.targets, 3))
   geometry.setAttribute('aNavData', new BufferAttribute(navigation.data, 3))
+  // Retain a background counterpart for each point moving into a figure.
+  // These start invisible and fade in at their source positions during formation,
+  // so the remaining-nebula setting refers to the complete initial cloud.
+  let figureParticleCount = 0
+  while (figureParticleCount < count && navigation.data[figureParticleCount * 3]! >= 0) {
+    figureParticleCount += 1
+  }
+  for (const [name, attribute] of Object.entries(geometry.attributes)) {
+    const expanded = new Float32Array((count + figureParticleCount) * attribute.itemSize)
+    expanded.set(attribute.array)
+    expanded.set(attribute.array.slice(0, figureParticleCount * attribute.itemSize), count * attribute.itemSize)
+    if (name === 'aNavData') {
+      for (let index = count; index < count + figureParticleCount; index += 1) expanded[index * 3] = -2
+    }
+    geometry.setAttribute(name, new BufferAttribute(expanded, attribute.itemSize))
+  }
   return geometry
 }
 
@@ -176,6 +188,24 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const figureWorld = new Vector3()
   const figureProjected = new Vector3()
   const figureScreenCenters = new Float32Array(ROAD_NAV_SECTIONS.length * 2)
+  let figureLayout = createNavigationLayout(window.innerWidth, window.innerHeight)
+  let navigationGeometryDirty = false
+  let navigationLayoutDirty = false
+  const stopGeometryWatch = watch(
+    () => [
+      NAV_CONSTELLATION.figureCount, NAV_CONSTELLATION.figureSize, NAV_CONSTELLATION.formationStagger,
+      NAV_CONSTELLATION.qualityParticleScale.low, NAV_CONSTELLATION.qualityParticleScale.medium,
+      NAV_CONSTELLATION.qualityParticleScale.high,
+    ],
+    () => { navigationGeometryDirty = true },
+  )
+  const stopLayoutWatch = watch(
+    () => [
+      NAV_CONSTELLATION.figureCount, NAV_CONSTELLATION.figureSize, NAV_CONSTELLATION.layoutSeed,
+      NAV_CONSTELLATION.layoutGap, NAV_CONSTELLATION.hoverScale,
+    ],
+    () => { navigationLayoutDirty = true },
+  )
   const black = new Color('#070708')
   const purple = new Color(PURPLE_PORTAL.background)
   const background = new Color(black)
@@ -268,17 +298,15 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       uPointerAttraction: { value: NAV_CONSTELLATION.pointerAttraction },
       uHeroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
       uNavFormation: { value: 0 },
+      uNebulaRemaining: { value: Math.max(0, Math.min(100, NAV_CONSTELLATION.nebulaRemainingPercent)) / 100 },
       uNavHover0: { value: 0 }, uNavHover1: { value: 0 }, uNavHover2: { value: 0 },
       uNavHover3: { value: 0 }, uNavHover4: { value: 0 },
       uNavHoverScale: { value: runtime.reducedMotion ? 1 : NAV_CONSTELLATION.hoverScale },
       uNavHoverBrightness: { value: NAV_CONSTELLATION.hoverBrightness },
       uNavSelectedFigure: { value: -1 },
       uNavSelectedBrightness: { value: NAV_CONSTELLATION.selectedBrightness },
-      uNavCheckerColumns: { value: NAV_CONSTELLATION.checkerColumns },
-      uNavCheckerStepX: { value: NAV_CONSTELLATION.checkerStepX * NAV_LAYOUT_SCALE_X },
-      uNavCheckerStepY: { value: NAV_CONSTELLATION.checkerStepY * NAV_LAYOUT_SCALE_Y },
-      uNavMobile: { value: window.innerWidth <= 820 ? 1 : 0 },
-      uNavMobileCenters: { value: ROAD_NAV_SECTIONS.map((_, index) => new Vector3(...navigationMobileFigureCenter(index))) },
+      uNavLayoutScale: { value: figureLayout.scale },
+      uNavCenters: { value: ROAD_NAV_SECTIONS.map((_, index) => new Vector3(...(figureLayout.figures[index]?.center ?? [0, 0, 0]))) },
       uIntroNoise: { value: ROAD_INTRO.enabled && !runtime.reducedMotion ? 1 : 0 },
       uNoiseAmplitude: { value: ROAD_INTRO.particleNoiseAmplitude },
       uNoiseSpeed: { value: ROAD_INTRO.particleNoiseSpeed },
@@ -355,6 +383,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (particles) { particles.parent?.remove(particles); particles.geometry.dispose() }
     particleCount = PARTICLE_COUNTS[quality]
     particles = new Points(buildParticleGeometry(particleCount, JOURNEY_PARTICLE_COUNTS[quality], quality), particleMaterial)
+    particleCount = particles.geometry.getAttribute('position').count
     particles.frustumCulled = false
     scene.add(particles)
 
@@ -464,10 +493,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const updateFigureScreenCenters = (): void => {
     if (!particles) return
     particles.updateMatrixWorld(true)
-    const mobile = window.innerWidth <= 820
     const count = Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length)
     for (let index = 0; index < count; index += 1) {
-      const center = mobile ? navigationMobileFigureCenter(index) : navigationFigureCenter(index)
+      const center = figureLayout.figures[index]?.center ?? [0, 0, 0]
       figureWorld.set(center[0], center[1], center[2])
       particles.localToWorld(figureWorld)
       figureProjected.copy(figureWorld).project(camera)
@@ -485,7 +513,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       const screenX = figureScreenCenters[index * 2] ?? -1000
       const screenY = figureScreenCenters[index * 2 + 1] ?? -1000
       const distance = Math.hypot(clientX - screenX, clientY - screenY)
-      const hitRadius = ROAD_NAV_SECTIONS[index]?.hitRadius ?? NAV_CONSTELLATION.figureHitRadius
+      const hitRadius = figureLayout.figures[index]?.radius ?? NAV_CONSTELLATION.figureHitRadius
       if (distance < hitRadius && distance < closestDistance) {
         closestDistance = distance
         closest = index
@@ -539,6 +567,28 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
+      if (navigationGeometryDirty && particles) {
+        const next = buildParticleGeometry(PARTICLE_COUNTS[activeQuality], JOURNEY_PARTICLE_COUNTS[activeQuality], activeQuality)
+        particles.geometry.dispose()
+        particles.geometry = next
+        particleCount = next.getAttribute('position').count
+        navigationGeometryDirty = false
+        hoveredFigure = -1
+      }
+      if (navigationLayoutDirty) {
+        figureLayout = createNavigationLayout(window.innerWidth, window.innerHeight, camera.fov)
+        particleMaterial.uniforms.uNavLayoutScale!.value = figureLayout.scale
+        const centers = particleMaterial.uniforms.uNavCenters!.value as Vector3[]
+        centers.forEach((center, index) => center.set(...(figureLayout.figures[index]?.center ?? [0, 0, 0])))
+        navigationLayoutDirty = false
+        lastFigureLayoutSentAt = -1
+      }
+      particleMaterial.uniforms.uNebulaRemaining!.value = clamp01(NAV_CONSTELLATION.nebulaRemainingPercent / 100)
+      particleMaterial.uniforms.uPointerRadius!.value = NAV_CONSTELLATION.pointerDistortionRadius
+      particleMaterial.uniforms.uPointerAttraction!.value = NAV_CONSTELLATION.pointerAttraction
+      particleMaterial.uniforms.uNavHoverScale!.value = reducedMotion ? 1 : NAV_CONSTELLATION.hoverScale
+      particleMaterial.uniforms.uNavHoverBrightness!.value = NAV_CONSTELLATION.hoverBrightness
+      particleMaterial.uniforms.uNavSelectedBrightness!.value = NAV_CONSTELLATION.selectedBrightness
       lastElapsed = elapsed
       if (ROAD_APPEARANCE.width !== lastRoadWidth || ROAD_APPEARANCE.thickness !== lastRoadThickness) {
         if (ribbon) {
@@ -746,6 +796,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
               positions: Array.from({length: count}, (_, index) => ({
                 x: figureScreenCenters[index * 2] ?? 0,
                 y: figureScreenCenters[index * 2 + 1] ?? 0,
+                labelOffset: figureLayout.figures[index]?.labelOffset ?? 68,
               })),
             },
           }))
@@ -843,9 +894,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     resize: (width, height) => {
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
       particleMaterial.uniforms.uViewport!.value.set(width, height)
-      particleMaterial.uniforms.uNavMobile!.value = width <= 820 ? 1 : 0
-      const mobileCenters = particleMaterial.uniforms.uNavMobileCenters!.value as Vector3[]
-      mobileCenters.forEach((center, index) => center.set(...navigationMobileFigureCenter(index, width, height, camera.fov)))
+      figureLayout = createNavigationLayout(width, height, camera.fov)
+      particleMaterial.uniforms.uNavLayoutScale!.value = figureLayout.scale
+      const centers = particleMaterial.uniforms.uNavCenters!.value as Vector3[]
+      centers.forEach((center, index) => center.set(...(figureLayout.figures[index]?.center ?? [0, 0, 0])))
     },
     setQuality: (quality, profile) => {
       buildQuality(quality)
@@ -877,6 +929,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
     },
     dispose: () => {
+      stopGeometryWatch()
+      stopLayoutWatch()
       window.removeEventListener('pointermove', onPointerMove)
       window.removeEventListener('pointerup', onPointerClick)
       document.documentElement.removeEventListener('mouseleave', onPointerLeave)

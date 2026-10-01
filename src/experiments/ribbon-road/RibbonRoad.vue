@@ -221,10 +221,10 @@ const topics = [
 
 const partners = ['ROSTELECOM', 'NORTH / AI', 'ARC SYSTEMS', 'TIDE', 'COMMON ERA', 'SIGNAL', 'PARALLEL', 'FIELD OFFICE'] as const
 const heroLinks = ROAD_NAV_SECTIONS.map(({id: target, label, className}) => ({target, label, className}))
-const visibleHeroLinks = heroLinks.slice(
+const visibleHeroLinks = computed(() => heroLinks.slice(
   0,
   Math.max(1, Math.min(NAV_CONSTELLATION.figureCount, heroLinks.length)),
-)
+))
 
 type NavigationPhase =
   | 'locked-intro'
@@ -239,7 +239,7 @@ const submitted = ref(false)
 const navigationPhase = ref<NavigationPhase>('locked-intro')
 const selectedSection = ref<RoadSectionId | null>(null)
 const figuresReady = ref(false)
-const figureLabelPositions = ref<readonly {x: number; y: number}[]>([])
+const figureLabelPositions = ref<readonly {x: number; y: number; labelOffset: number}[]>([])
 const journeyFloorY = ref(0)
 const {container, ready, error, metrics} = useThreeScene(createRibbonRoadScene)
 const orderedSections = computed<readonly RoadSectionId[]>(() => selectedSection.value
@@ -249,7 +249,7 @@ const sectionOrder = (id: RoadSectionId): number => orderedSections.value.indexO
 const figureLabelStyle = (index: number): Record<string, string> => {
   const position = figureLabelPositions.value[index]
   return position
-    ? {left: `${position.x}px`, top: `${position.y + 34}px`}
+    ? {left: `${position.x}px`, top: `${position.y + position.labelOffset}px`}
     : {visibility: 'hidden'}
 }
 const {debug, paneHost} = useDebugPane(metrics, {
@@ -279,6 +279,37 @@ const {debug, paneHost} = useDebugPane(metrics, {
     {key: 'activeRoadIndex', label: 'Active Road'},
   ],
   setup: (pane) => {
+    const hero = pane.addFolder({title: 'Hero · созвездие', expanded: true})
+    hero.addBinding(NAV_CONSTELLATION, 'nebulaRemainingPercent', {label: 'Туманность, %', min: 0, max: 100, step: 1})
+    hero.addBinding(NAV_CONSTELLATION, 'figureCount', {label: 'Количество фигур', min: 1, max: ROAD_NAV_SECTIONS.length, step: 1})
+    hero.addBinding(NAV_CONSTELLATION, 'figureSize', {label: 'Размер фигур', min: 0.04, max: 0.3, step: 0.005})
+    hero.addBinding(NAV_CONSTELLATION, 'layoutSeed', {label: 'Вариант раскладки', min: 0, max: 10000, step: 1})
+    hero.addBinding(NAV_CONSTELLATION, 'layoutGap', {label: 'Зазор, px', min: 0, max: 64, step: 1})
+    const formation = hero.addFolder({title: 'Сборка фигур', expanded: false})
+    formation.addBinding(NAV_CONSTELLATION, 'formationDelay', {label: 'Задержка, с', min: 0, max: 3, step: 0.05})
+    formation.addBinding(NAV_CONSTELLATION, 'formationDuration', {label: 'Длительность, с', min: 0.1, max: 6, step: 0.1})
+    formation.addBinding(NAV_CONSTELLATION, 'formationStagger', {label: 'Интервал фигур, с', min: 0, max: 0.6, step: 0.01})
+    formation.addButton({title: 'Повторить анимацию hero'}).on('click', () => {
+      if (window.scrollY > window.innerHeight * 0.1) return
+      figuresReady.value = false
+      navigationPhase.value = 'locked-intro'
+      scrollGate.lock(0)
+      container.value?.dispatchEvent(new CustomEvent('roadreset'))
+      syncNavigationMetrics()
+      armNavigationFallback()
+    })
+    const interaction = hero.addFolder({title: 'Взаимодействие', expanded: false})
+    interaction.addBinding(NAV_CONSTELLATION, 'hoverScale', {label: 'Увеличение', min: 1, max: 1.4, step: 0.01})
+    interaction.addBinding(NAV_CONSTELLATION, 'hoverBrightness', {label: 'Яркость акцента', min: 0.5, max: 3, step: 0.05})
+    interaction.addBinding(NAV_CONSTELLATION, 'hoverResponse', {label: 'Скорость отклика', min: 1, max: 25, step: 0.5})
+    interaction.addBinding(NAV_CONSTELLATION, 'selectedBrightness', {label: 'Яркость выбора', min: 0.5, max: 3, step: 0.05})
+    interaction.addBinding(NAV_CONSTELLATION, 'pointerDistortionRadius', {label: 'Радиус мыши, px', min: 16, max: 200, step: 1})
+    interaction.addBinding(NAV_CONSTELLATION, 'pointerAttraction', {label: 'Притяжение', min: 0, max: 0.4, step: 0.01})
+    interaction.addBinding(NAV_CONSTELLATION, 'scrollDuration', {label: 'Переход к секции, с', min: 0, max: 4, step: 0.1})
+    const density = hero.addFolder({title: 'Плотность по качеству', expanded: false})
+    for (const level of ['low', 'medium', 'high'] as const) {
+      density.addBinding(NAV_CONSTELLATION.qualityParticleScale, level, {label: level, min: 0.2, max: 1, step: 0.05})
+    }
     const features = pane.addFolder({title: 'Feature toggles', expanded: false})
     features.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', {label: 'Cinematic 3D camera'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', {label: 'Horizontal camera follow'})
@@ -337,7 +368,7 @@ const armNavigationFallback = (): void => {
       scrollGate.unlock()
       syncNavigationMetrics()
     }
-  }, 9000)
+  }, Math.max(9000, (NAV_CONSTELLATION.formationDelay + NAV_CONSTELLATION.formationDuration + 5) * 1000))
 }
 
 const cancelScrollAnimation = (): void => {
@@ -473,7 +504,7 @@ onMounted(() => {
     if (sectionId) void selectSection(sectionId)
   }
   const onFigureLayout = (event: Event): void => {
-    const positions = (event as CustomEvent<{positions?: {x: number; y: number}[]}>).detail?.positions
+    const positions = (event as CustomEvent<{positions?: {x: number; y: number; labelOffset: number}[]}>).detail?.positions
     if (positions) figureLabelPositions.value = positions
   }
   container.value?.addEventListener('roadherorevealcomplete', onHeroRevealComplete)
@@ -841,7 +872,7 @@ watch(error, (value) => {
   letter-spacing: .06em;
   white-space: nowrap;
   opacity: 0;
-  transform: translate(-50%, 34px);
+  transform: translateX(-50%);
   transition: opacity .45s;
 }
 

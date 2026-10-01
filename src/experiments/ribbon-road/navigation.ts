@@ -1,4 +1,5 @@
 import { PARTICLE_FIGURE_DATA } from './particleFigureData.generated'
+import { reactive } from 'vue'
 
 export type RoadSectionId =
   | 'road-about'
@@ -29,9 +30,12 @@ export const ROAD_NAV_SECTIONS: readonly RoadNavigationSection[] = [
 
 export const ORIGINAL_SECTION_ORDER: readonly RoadSectionId[] = ROAD_NAV_SECTIONS.map(({ id }) => id)
 
-export const NAV_CONSTELLATION = {
+export const NAV_CONSTELLATION = reactive({
   enabled: true,
   figureCount: 5,
+  // 0–100: visible share of the ORIGINAL nebula after the figures form.
+  // Independent of figure particle counts. 100 restores the complete background.
+  nebulaRemainingPercent: 80,
   qualityParticleScale: { low: 0.6, medium: 0.8, high: 1 },
   formationDelay: 0.25,
   formationDuration: 1.4,
@@ -40,12 +44,11 @@ export const NAV_CONSTELLATION = {
   hoverBrightness: 1.65,
   hoverResponse: 9,
   selectedBrightness: 1.85,
-  checkerColumns: 5,
-  checkerStepX: 0.13,
-  checkerStepY: 0.105,
-  figureSize: 0.105,
+  layoutSeed: 20,
+  layoutGap: 16,
+  figureSize: 0.15,
   figureHitRadius: 58,
   pointerDistortionRadius: 96,
   pointerAttraction: 0.16,
   scrollDuration: 1.2,
-} as const
+})

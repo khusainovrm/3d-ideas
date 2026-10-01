@@ -9,6 +9,7 @@ uniform float uPointerRadius;
 uniform float uPointerAttraction;
 uniform float uHeroReveal;
 uniform float uNavFormation;
+uniform float uNebulaRemaining;
 uniform float uNavHover0;
 uniform float uNavHover1;
 uniform float uNavHover2;
@@ -18,11 +19,8 @@ uniform float uNavHoverScale;
 uniform float uNavHoverBrightness;
 uniform float uNavSelectedFigure;
 uniform float uNavSelectedBrightness;
-uniform float uNavCheckerColumns;
-uniform float uNavCheckerStepX;
-uniform float uNavCheckerStepY;
-uniform float uNavMobile;
-uniform vec3 uNavMobileCenters[5];
+uniform float uNavLayoutScale;
+uniform vec3 uNavCenters[5];
 uniform float uIntroNoise;
 uniform float uNoiseAmplitude;
 uniform float uNoiseSpeed;
@@ -54,20 +52,11 @@ float navHover(float figureIndex) {
 }
 
 vec3 navCenter(float figureIndex) {
-  float columns = max(1.0, uNavCheckerColumns);
-  float column = mod(figureIndex, columns);
-  float row = floor(figureIndex / columns);
-  float upperRow = 1.0 - mod(figureIndex, 2.0);
-  float y = mix(-uNavCheckerStepY, uNavCheckerStepY, upperRow) - row * uNavCheckerStepY * 2.4;
-  return vec3(-2.2 + column * uNavCheckerStepX, y, 0.0);
-}
-
-vec3 navMobileCenter(float figureIndex) {
-  if (figureIndex < 0.5) return uNavMobileCenters[0];
-  if (figureIndex < 1.5) return uNavMobileCenters[1];
-  if (figureIndex < 2.5) return uNavMobileCenters[2];
-  if (figureIndex < 3.5) return uNavMobileCenters[3];
-  return uNavMobileCenters[4];
+  if (figureIndex < 0.5) return uNavCenters[0];
+  if (figureIndex < 1.5) return uNavCenters[1];
+  if (figureIndex < 2.5) return uNavCenters[2];
+  if (figureIndex < 3.5) return uNavCenters[3];
+  return uNavCenters[4];
 }
 
 vec3 statePosition(float state) {
@@ -96,10 +85,8 @@ void main() {
   float selectedAmount = (1.0 - step(0.25, abs(figureIndex - uNavSelectedFigure))) * navMembership;
   float figureProgress = smoothstep(navFormationDelay, min(1.0, navFormationDelay + 0.28), uNavFormation)
     * navMembership * heroAmount;
-  vec3 desktopCenter = navCenter(figureIndex);
-  vec3 figureCenter = mix(desktopCenter, navMobileCenter(figureIndex), uNavMobile);
-  vec3 scaledNavTarget = figureCenter
-    + (aNavTarget - desktopCenter) * mix(1.0, uNavHoverScale, figureHover);
+  vec3 scaledNavTarget = navCenter(figureIndex)
+    + aNavTarget * uNavLayoutScale * mix(1.0, uNavHoverScale, figureHover);
   p = mix(p, scaledNavTarget, figureProgress);
 
   // A few incommensurate waves give every particle a slow, non-repeating
@@ -146,10 +133,15 @@ void main() {
   float revealStart = fract(aSeed * 91.713 + aHeroDrift * 17.17) * 0.82;
   float revealOpacity = smoothstep(revealStart, revealStart + 0.18, heroReveal);
   float particleAlpha = mix(regularAlpha, aHeroAlpha * 0.82, heroAmount);
-  float cloudDim = mix(1.0, 0.14, uNavFormation * (1.0 - navMembership) * heroAmount);
+  float cloudDim = mix(1.0, uNebulaRemaining, uNavFormation * (1.0 - navMembership) * heroAmount);
+  // Background counterparts of migrating particles retain the original cloud.
+  // Hide them before formation and outside hero (including journey morphs).
+  float isBackgroundCopy = 1.0 - step(-1.5, figureIndex);
+  float copyReveal = smoothstep(navFormationDelay, min(1.0, navFormationDelay + 0.28), uNavFormation);
+  float backgroundCopyVisibility = mix(1.0, copyReveal * heroAmount, isBackgroundCopy);
   float revealedAlpha = particleAlpha * mix(1.0, revealOpacity, heroAmount);
   float styledAlpha = mix(revealedAlpha, min(1.0, navStyle.x), figureProgress);
-  vAlpha = uVisibility * styledAlpha * cloudDim;
+  vAlpha = uVisibility * styledAlpha * cloudDim * backgroundCopyVisibility;
   vAccent = step(mix(0.965, 0.997, heroAmount), aSeed) * (1.0 - figureProgress);
   float formedBrightness = mix(1.0, navStyle.z, figureProgress);
   float selectedBrightness = mix(1.0, uNavSelectedBrightness, selectedAmount * figureProgress);
