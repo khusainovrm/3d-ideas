@@ -9,6 +9,7 @@ import {
   DirectionalLight,
   DynamicDrawUsage,
   FrontSide,
+  IcosahedronGeometry,
   LineSegments,
   Matrix4,
   Mesh,
@@ -31,9 +32,10 @@ import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import {
   BALL_RADIUS,
   BALL_SURFACE_GAP,
+  BALL_APPEARANCE,
   JOURNEY_END,
   JOURNEY_START,
-  ROAD_THICKNESS,
+  ROAD_APPEARANCE,
   ROAD_VISIBILITY,
   ROAD_INTRO,
   PARTICLE_CONNECTIONS,
@@ -43,6 +45,7 @@ import {
   createRibbonGeometry,
   createRoadCurve,
   getRoadFrame,
+  type BallShape,
 } from './route'
 
 gsap.registerPlugin(ScrollTrigger)
@@ -67,6 +70,14 @@ interface ParticleConnection {
 const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
+const createBallGeometry = (shape: BallShape, segments: number): BufferGeometry => {
+  if (shape === 'lowPoly') return new IcosahedronGeometry(BALL_RADIUS, 1)
+  if (shape === 'faceted') {
+    const widthSegments = Math.max(10, Math.round(segments * 0.5))
+    return new SphereGeometry(BALL_RADIUS, widthSegments, Math.max(7, Math.round(widthSegments * 0.7)))
+  }
+  return new SphereGeometry(BALL_RADIUS, segments, Math.max(12, Math.round(segments * 0.75)))
+}
 const PORTAL_PROGRESS = JOURNEY_START + ROAD_SECTIONS.speakers[0] * (JOURNEY_END - JOURNEY_START) + 0.02
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
 const journeyProgress = (scroll: number): number => JOURNEY_START + clamp01(scroll) * (JOURNEY_END - JOURNEY_START)
@@ -157,7 +168,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const black = new Color('#070708')
   const purple = new Color(PURPLE_PORTAL.background)
   const background = new Color(black)
-  const ballMilk = new Color('#e7e1d8')
+  const ballMilk = new Color(BALL_APPEARANCE.color)
   const ballPurple = new Color('#d4c9f0')
   const tangent = new Vector3()
   const normal = new Vector3()
@@ -197,7 +208,11 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   let particleCount = 0
   let ribbon: Mesh | undefined
   let particles: Points | undefined
-  let ball: Mesh<SphereGeometry, MeshStandardMaterial> | undefined
+  let ball: Mesh<BufferGeometry, MeshStandardMaterial> | undefined
+  let activeQuality = runtime.quality
+  let lastRoadWidth = ROAD_APPEARANCE.width
+  let lastRoadThickness = ROAD_APPEARANCE.thickness
+  let lastBallShape: BallShape = BALL_APPEARANCE.shape
   let pointerSamplePending = false
   let lastHoveredParticle = -1
   const particleConnections: ParticleConnection[] = []
@@ -227,6 +242,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       uFadeEnd: { value: ROAD_VISIBILITY.visibleDistance + ROAD_VISIBILITY.fadeSoftness },
       uFadeStrength: { value: ROAD_VISIBILITY.strength },
       uIntroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
+      uRoadColor: { value: new Color(ROAD_APPEARANCE.color) },
     },
     side: FrontSide,
     transparent: true,
@@ -285,19 +301,27 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     roughness: 0.58,
     metalness: 0,
   })
+  const ballMaterial = new MeshStandardMaterial({
+    color: ballMilk,
+    roughness: 0.66,
+    metalness: 0,
+    emissive: '#000000',
+    emissiveIntensity: 0.2,
+  })
 
   const portal = new Mesh(new SphereGeometry(PURPLE_PORTAL.radius, 36, 28), portalMaterial)
   portal.position.copy(curve.getPointAt(PORTAL_PROGRESS)).addScaledVector(
     portalNormal,
-    ROAD_THICKNESS / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
+    ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
   )
   portal.renderOrder = 2
   portal.visible = false
   scene.add(portal)
 
   const buildQuality = (quality: QualityLevel): void => {
+    activeQuality = quality
     if (ribbon) { scene.remove(ribbon); ribbon.geometry.dispose() }
-    ribbon = new Mesh(createRibbonGeometry(curve, RIBBON_STEPS[quality]), ribbonMaterial)
+    ribbon = new Mesh(createRibbonGeometry(curve, RIBBON_STEPS[quality], ROAD_APPEARANCE.width, ROAD_APPEARANCE.thickness), ribbonMaterial)
     ribbon.frustumCulled = false
     ribbon.visible = !ROAD_INTRO.enabled
     scene.add(ribbon)
@@ -310,16 +334,18 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
     if (ball) { scene.remove(ball); ball.geometry.dispose() }
     const segments = BALL_SEGMENTS[quality]
-    ball = new Mesh(
-      new SphereGeometry(BALL_RADIUS, segments, Math.max(12, Math.round(segments * 0.75))),
-      new MeshStandardMaterial({ color: ballMilk, roughness: 0.66, metalness: 0.0, emissive: '#000000', emissiveIntensity: 0.2 }),
-    )
+    ballMaterial.flatShading = BALL_APPEARANCE.shape !== 'sphere'
+    ballMaterial.needsUpdate = true
+    ball = new Mesh(createBallGeometry(BALL_APPEARANCE.shape, segments), ballMaterial)
     ball.renderOrder = 3
     getRoadFrame(curve, ballProgress, tangent, normal, right)
-    ball.position.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_THICKNESS / 2 + BALL_RADIUS + BALL_SURFACE_GAP)
+    ball.position.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_APPEARANCE.thickness / 2 + BALL_APPEARANCE.radius + BALL_SURFACE_GAP)
     ballPrevious.copy(ball.position)
     ball.visible = !ROAD_INTRO.enabled
     scene.add(ball)
+    lastRoadWidth = ROAD_APPEARANCE.width
+    lastRoadThickness = ROAD_APPEARANCE.thickness
+    lastBallShape = BALL_APPEARANCE.shape
   }
   buildQuality(runtime.quality)
 
@@ -368,6 +394,31 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
+      if (ROAD_APPEARANCE.width !== lastRoadWidth || ROAD_APPEARANCE.thickness !== lastRoadThickness) {
+        if (ribbon) {
+          ribbon.geometry.dispose()
+          ribbon.geometry = createRibbonGeometry(
+            curve,
+            RIBBON_STEPS[activeQuality],
+            ROAD_APPEARANCE.width,
+            ROAD_APPEARANCE.thickness,
+          )
+        }
+        portal.position.copy(curve.getPointAt(PORTAL_PROGRESS)).addScaledVector(
+          portalNormal,
+          ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
+        )
+        lastRoadWidth = ROAD_APPEARANCE.width
+        lastRoadThickness = ROAD_APPEARANCE.thickness
+      }
+      if (BALL_APPEARANCE.shape !== lastBallShape && ball) {
+        ball.geometry.dispose()
+        ball.geometry = createBallGeometry(BALL_APPEARANCE.shape, BALL_SEGMENTS[activeQuality])
+        ball.material.flatShading = BALL_APPEARANCE.shape !== 'sphere'
+        ball.material.needsUpdate = true
+        lastBallShape = BALL_APPEARANCE.shape
+      }
+
       introProgress = introProgressAt(reducedMotion)
       const roadReveal = smoothstep(ROAD_INTRO.roadRevealStart, ROAD_INTRO.roadRevealEnd, introProgress)
       const ballEntry = smoothstep(ROAD_INTRO.ballEntryStart, ROAD_INTRO.ballEntryEnd, introProgress)
@@ -387,16 +438,20 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       const blend = 1 - Math.exp(-damping * Math.min(delta, 0.05))
       ballProgress += (targetProgress - ballProgress) * blend
       ballVelocity = (ballProgress - previousProgress) / Math.max(delta, 0.001)
-      rotationSpeed = Math.abs(ballVelocity) * curve.getLength() / BALL_RADIUS
+      rotationSpeed = Math.abs(ballVelocity) * curve.getLength() / Math.max(0.05, BALL_APPEARANCE.radius)
 
       getRoadFrame(curve, ballProgress, tangent, normal, right)
-      point.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_THICKNESS / 2 + BALL_RADIUS + BALL_SURFACE_GAP)
+      point.copy(curve.getPointAt(ballProgress)).addScaledVector(
+        normal,
+        ROAD_APPEARANCE.thickness / 2 + BALL_APPEARANCE.radius + BALL_SURFACE_GAP,
+      )
       if (ball) {
         const distance = point.distanceTo(ballPrevious)
         rotationAxis.crossVectors(tangent, normal).normalize()
-        rotationStep.setFromAxisAngle(rotationAxis, distance / BALL_RADIUS)
+        rotationStep.setFromAxisAngle(rotationAxis, distance / Math.max(0.05, BALL_APPEARANCE.radius))
         ball.quaternion.premultiply(rotationStep)
         ball.position.copy(point)
+        ball.scale.setScalar(BALL_APPEARANCE.radius / BALL_RADIUS)
         ballPrevious.copy(point)
         ball.visible = ballEntry > 0.005
       }
@@ -562,6 +617,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       ribbonMaterial.uniforms.uHover!.value = state.hover
       ribbonMaterial.uniforms.uPulse!.value = state.pulse > 0 ? state.pulse : -1
       ribbonMaterial.uniforms.uIntroReveal!.value = roadReveal
+      ;(ribbonMaterial.uniforms.uRoadColor!.value as Color).set(ROAD_APPEARANCE.color)
       ribbonMaterial.depthWrite = roadReveal > 0.98
       if (ribbon) ribbon.visible = roadReveal > 0.001
       const portalVisibility = smoothstep(0.34, 0.45, state.scroll) * (1 - smoothstep(0.58, 0.68, state.scroll))
@@ -571,6 +627,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       portal.scale.setScalar(portalReveal)
 
       if (ball) {
+        ballMilk.set(BALL_APPEARANCE.color)
         ball.material.color.copy(ballMilk).lerp(ballPurple, purplePhase * 0.72)
         ball.material.emissive.copy(ballPurple)
         ball.material.emissiveIntensity = purplePhase * 0.22 + state.pulse * 0.45

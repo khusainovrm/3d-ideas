@@ -5,7 +5,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
 import { createRibbonRoadScene } from './scene'
-import { PARTICLE_CONNECTIONS, RIBBON_ROAD_FEATURES } from './route'
+import { BALL_APPEARANCE, PARTICLE_CONNECTIONS, RIBBON_ROAD_FEATURES, ROAD_APPEARANCE } from './route'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -47,15 +47,29 @@ const { debug, paneHost } = useDebugPane(metrics, {
     { key: 'ballRotationSpeed', label: 'Ball Rotation Speed' },
   ],
   setup: (pane) => {
-    pane.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', { label: 'Cinematic 3D camera' })
-    pane.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', { label: 'Horizontal camera follow' })
-    pane.addBinding(RIBBON_ROAD_FEATURES, 'particleConnections', { label: 'Particle connections' })
-    pane.addBinding(PARTICLE_CONNECTIONS, 'fadeDuration', {
+    const features = pane.addFolder({ title: 'Feature toggles', expanded: false })
+    features.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', { label: 'Cinematic 3D camera' })
+    features.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', { label: 'Horizontal camera follow' })
+    features.addBinding(RIBBON_ROAD_FEATURES, 'particleConnections', { label: 'Particle connections' })
+    features.addBinding(PARTICLE_CONNECTIONS, 'fadeDuration', {
       label: 'Line fade, sec',
       min: 0.2,
       max: 8,
       step: 0.1,
     })
+
+    const road = pane.addFolder({ title: 'Road', expanded: false })
+    road.addBinding(ROAD_APPEARANCE, 'width', { label: 'Width', min: 0.4, max: 5, step: 0.025 })
+    road.addBinding(ROAD_APPEARANCE, 'thickness', { label: 'Thickness', min: 0.04, max: 1, step: 0.01 })
+    road.addBinding(ROAD_APPEARANCE, 'color', { label: 'Color', view: 'color' })
+
+    const ball = pane.addFolder({ title: 'Ball', expanded: false })
+    ball.addBinding(BALL_APPEARANCE, 'radius', { label: 'Radius', min: 0.15, max: 1.2, step: 0.01 })
+    ball.addBinding(BALL_APPEARANCE, 'shape', {
+      label: 'Shape',
+      options: { Sphere: 'sphere', Faceted: 'faceted', 'Low poly': 'lowPoly' },
+    })
+    ball.addBinding(BALL_APPEARANCE, 'color', { label: 'Color', view: 'color' })
   },
 })
 defineExpose({ container, paneHost })
@@ -260,7 +274,7 @@ onUnmounted(() => {
 .road-nav a { color: inherit; text-decoration: none; }
 .road-nav__mark { font-weight: 700; }
 .road-nav__cta { justify-self: end; padding-bottom: 5px; color: var(--orange) !important; border-bottom: 1px solid currentColor; }
-.road-debug { position: fixed; z-index: 30; top: 58px; right: 14px; width: 280px; }
+.road-debug { position: fixed; z-index: 30; top: 58px; right: 14px; width: 280px; max-height: calc(100dvh - 72px); overflow-y: auto; }
 .road-loading { position: fixed; z-index: 40; inset: 0; display: grid; place-items: center; background: #070708; font: 9px ui-monospace, monospace; letter-spacing: .15em; text-transform: uppercase; }
 .road-loading--error { color: #e18775; }
 .road-section { position: relative; z-index: 2; padding: clamp(96px, 11vw, 170px) clamp(22px, 6vw, 96px); }

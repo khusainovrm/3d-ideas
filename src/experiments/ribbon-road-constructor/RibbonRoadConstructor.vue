@@ -4,10 +4,13 @@ import type { SceneFactory } from '../../three/core/types'
 import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
 import { createConstructorScene } from './scene'
+import { ROAD_INTRO as PRODUCTION_ROAD_INTRO } from '../ribbon-road/route'
 import {
   DEFAULT_CAMERA,
+  DEFAULT_INTRO,
   cloneNodes,
   createConstructorState,
+  getIntroPreviewState,
   makeDefaultNodes,
   type CameraConfig,
   type InspectorTab,
@@ -17,7 +20,7 @@ import {
 const STORAGE_KEY = 'odyssey.ribbon-road-constructor.v1'
 const tabs: { id: InspectorTab; label: string }[] = [
   { id: 'nodes', label: 'Nodes' }, { id: 'road', label: 'Road' }, { id: 'ball', label: 'Ball' },
-  { id: 'camera', label: 'Camera' }, { id: 'preview', label: 'Preview' }, { id: 'export', label: 'Export' },
+  { id: 'intro', label: 'Intro' }, { id: 'camera', label: 'Camera' }, { id: 'preview', label: 'Preview' }, { id: 'export', label: 'Export' },
 ]
 const sections = [
   ['Hero', 0], ['About', 0.16], ['Program', 0.36], ['Speakers', 0.53],
@@ -45,6 +48,14 @@ const canRedo = computed(() => state.historyIndex < history.value.length - 1)
 const currentSection = computed(() => {
   for (let index = sections.length - 1; index >= 0; index -= 1) if (state.progress >= sections[index]![1]) return sections[index]![0]
   return 'Hero'
+})
+const introPreview = computed(() => getIntroPreviewState(state))
+const previewCurveProgress = computed(() => {
+  const journey = state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart) + 0.02
+  if (!state.intro.enabled) return journey
+  const introStart = Math.max(0, state.journeyStart - state.intro.ballStartProgressOffset)
+  const introTarget = introStart + (state.intro.ballArrivalProgress - introStart) * introPreview.value.ballEntry
+  return introTarget + (journey - introTarget) * introPreview.value.ballHandoff
 })
 
 const snapshot = (): RouteNode[] => cloneNodes(state.nodes)
@@ -85,6 +96,7 @@ const { debug, paneHost } = useDebugPane(metrics, {
     { key: 'calls', label: 'Draw Calls' }, { key: 'triangles', label: 'Triangles' },
     { key: 'nodeCount', label: 'Node Count' }, { key: 'selectedNode', label: 'Selected Node' },
     { key: 'lineSamples', label: 'Geometry Steps' }, { key: 'scrollProgress', label: 'Scroll Progress' }, { key: 'ribbonProgress', label: 'Curve Progress' },
+    { key: 'transitionProgress', label: 'Intro Progress' },
     { key: 'ballProgress', label: 'Ball Progress' }, { key: 'ballPosition', label: 'Ball Position' },
     { key: 'cameraPosition', label: 'Camera Position' }, { key: 'cameraTarget', label: 'Camera Target' },
     { key: 'editorMode', label: 'Mode' }, { key: 'dragging', label: 'Dragging' }, { key: 'historyIndex', label: 'History' },
@@ -172,6 +184,7 @@ const dropNode = (to: number): void => {
   state.nodes.splice(to, 0, node); state.selectedIndex = to; touch()
 }
 const focusSelected = (): void => { state.focusNonce += 1 }
+const resetIntro = (): void => { Object.assign(state.intro, DEFAULT_INTRO) }
 
 const resetRoute = (): void => {
   if (!window.confirm('Вернуть исходный маршрут Ribbon Road?')) return
@@ -186,7 +199,11 @@ const restoreDraft = (): void => {
     const saved = JSON.parse(raw) as { nodes?: RouteNode[]; camera?: CameraConfig; settings?: Partial<typeof state> }
     if (saved.nodes && saved.nodes.length >= 4) state.nodes.splice(0, state.nodes.length, ...cloneNodes(saved.nodes))
     if (saved.camera) Object.assign(state.camera, saved.camera)
-    if (saved.settings) Object.assign(state, saved.settings)
+    if (saved.settings) {
+      if (saved.settings.intro) Object.assign(state.intro, saved.settings.intro)
+      const { intro: _intro, ...settings } = saved.settings
+      Object.assign(state, settings)
+    }
     state.revision += 1
     history.value = [snapshot()]; state.historyIndex = 0
   } catch { localStorage.removeItem(STORAGE_KEY) }
@@ -250,6 +267,19 @@ const vectorList = computed(() => groupedRows(vectorRows.value))
 const completeCurveCode = computed(() => `const makeCurve = (): CatmullRomCurve3 => new CatmullRomCurve3([\n${vectorList.value}\n], false, '${state.splineType}', ${state.tension.toFixed(2)})`)
 const exportPreview = computed(() => includeWrapper.value ? roadPointConfig.value : tupleList.value)
 const cameraCode = computed(() => `const CAMERA_CONFIG = ${JSON.stringify(state.camera, null, 2)}`)
+const introCode = computed(() => {
+  const { previewPageViewportHeights: _previewOnly, ...intro } = state.intro
+  return `export const ROAD_INTRO = ${JSON.stringify({
+    ...intro,
+    triggerSectionId: intro.triggerSectionId || null,
+    particleDistance: PRODUCTION_ROAD_INTRO.particleDistance,
+    particleRightOffset: PRODUCTION_ROAD_INTRO.particleRightOffset,
+    particleVerticalOffset: PRODUCTION_ROAD_INTRO.particleVerticalOffset,
+    particleIntroScale: PRODUCTION_ROAD_INTRO.particleIntroScale,
+    particleNoiseAmplitude: PRODUCTION_ROAD_INTRO.particleNoiseAmplitude,
+    particleNoiseSpeed: PRODUCTION_ROAD_INTRO.particleNoiseSpeed,
+  }, null, 2)} as const`
+})
 const notifyCopied = (label: string): void => {
   copyStatus.value = `${label} скопирован`
   window.clearTimeout(statusTimer); statusTimer = window.setTimeout(() => { copyStatus.value = '' }, 1800)
@@ -283,7 +313,7 @@ const onKey = (event: KeyboardEvent): void => {
   if (event.code === 'Space') { event.preventDefault(); state.playing = !state.playing }
 }
 
-watch(() => [state.nodes, state.camera, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
+watch(() => [state.nodes, state.camera, state.intro, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
   window.clearTimeout(saveTimer)
   saveTimer = window.setTimeout(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({
@@ -293,7 +323,7 @@ watch(() => [state.nodes, state.camera, state.width, state.thickness, state.geom
         journeyStart: state.journeyStart, journeyEnd: state.journeyEnd, ballRadius: state.ballRadius, ballGap: state.ballGap,
         ballDamping: state.ballDamping, followScroll: state.followScroll, showPoints: state.showPoints, showPolygon: state.showPolygon,
         showSpline: state.showSpline, showRibbon: state.showRibbon, showGrid: state.showGrid, showAxes: state.showAxes,
-        showPortal: state.showPortal, selectedIndex: state.selectedIndex,
+        showPortal: state.showPortal, selectedIndex: state.selectedIndex, intro: state.intro,
       },
     }))
     hasDraft.value = true
@@ -390,6 +420,30 @@ onUnmounted(() => {
         <label>Progress <input v-model.number="state.progress" type="range" min="0" max="1" step="0.001" /><output>{{ state.progress.toFixed(3) }}</output></label>
       </div>
 
+      <div v-else-if="state.tab === 'intro'" class="panel-body form-stack">
+        <h2>Intro reveal</h2>
+        <label class="check"><input v-model="state.intro.enabled" type="checkbox" /> Hide road before intro</label>
+        <label>Trigger <select v-model="state.intro.triggerSectionId"><option value="">Viewport distance</option><option value="road-about">About section</option><option value="road-program">Program section</option><option value="road-speakers">Speakers section</option><option value="road-registration">Registration</option><option value="road-partners">Partners section</option></select></label>
+        <label v-if="!state.intro.triggerSectionId">Trigger, vh <input v-model.number="state.intro.triggerViewportHeights" type="range" min="0" max="3" step="0.05" /><output>{{ state.intro.triggerViewportHeights.toFixed(2) }}</output></label>
+        <label>Transition, vh <input v-model.number="state.intro.transitionViewportHeights" type="range" min="0.1" max="2" step="0.05" /><output>{{ state.intro.transitionViewportHeights.toFixed(2) }}</output></label>
+        <label>Preview page, vh <input v-model.number="state.intro.previewPageViewportHeights" type="range" min="4" max="16" step="0.5" /><output>{{ state.intro.previewPageViewportHeights.toFixed(1) }}</output></label>
+        <p class="hint">Preview page переводит реальные vh в шкалу 0–1 конструктора. Для текущего лендинга подходит 8.5.</p>
+        <h3>Road visibility</h3>
+        <label>Reveal start <input v-model.number="state.intro.roadRevealStart" type="range" min="0" :max="state.intro.roadRevealEnd" step="0.01" /><output>{{ state.intro.roadRevealStart.toFixed(2) }}</output></label>
+        <label>Reveal end <input v-model.number="state.intro.roadRevealEnd" type="range" :min="state.intro.roadRevealStart" max="1" step="0.01" /><output>{{ state.intro.roadRevealEnd.toFixed(2) }}</output></label>
+        <h3>Ball entry</h3>
+        <label>Entry start <input v-model.number="state.intro.ballEntryStart" type="range" min="0" :max="state.intro.ballEntryEnd" step="0.01" /><output>{{ state.intro.ballEntryStart.toFixed(2) }}</output></label>
+        <label>Entry end <input v-model.number="state.intro.ballEntryEnd" type="range" :min="state.intro.ballEntryStart" max="1" step="0.01" /><output>{{ state.intro.ballEntryEnd.toFixed(2) }}</output></label>
+        <label>Start offset <input v-model.number="state.intro.ballStartProgressOffset" type="range" min="0" max="0.3" step="0.005" /><output>{{ state.intro.ballStartProgressOffset.toFixed(3) }}</output></label>
+        <label>Arrival <input v-model.number="state.intro.ballArrivalProgress" type="range" min="0" max="0.3" step="0.005" /><output>{{ state.intro.ballArrivalProgress.toFixed(3) }}</output></label>
+        <h3>Intro camera</h3>
+        <label>Camera lift <input v-model.number="state.intro.cameraLift" type="range" min="0" max="24" step="0.5" /><output>{{ state.intro.cameraLift.toFixed(1) }}</output></label>
+        <label>Side distance <input v-model.number="state.intro.initialSideDistance" type="range" min="-14" max="14" step="0.1" /><output>{{ state.intro.initialSideDistance.toFixed(1) }}</output></label>
+        <label>Side height <input v-model.number="state.intro.initialSideHeight" type="range" min="0" max="10" step="0.1" /><output>{{ state.intro.initialSideHeight.toFixed(1) }}</output></label>
+        <label>Handoff, vh <input v-model.number="state.intro.ballHandoffViewportHeights" type="range" min="0.1" max="3" step="0.05" /><output>{{ state.intro.ballHandoffViewportHeights.toFixed(2) }}</output></label>
+        <button @click="resetIntro">Reset intro settings</button>
+      </div>
+
       <div v-else-if="state.tab === 'camera'" class="panel-body form-stack">
         <h2>Journey camera</h2>
         <label>FOV <input v-model.number="state.camera.fov" type="range" min="25" max="80" step="1" /><output>{{ state.camera.fov }}</output></label>
@@ -409,7 +463,7 @@ onUnmounted(() => {
         <h2>Live preview</h2>
         <button class="primary" @click="state.mode = 'preview'; state.playing = !state.playing">{{ state.playing ? 'Pause' : 'Play journey' }}</button>
         <button @click="jumpTo(0)">Reset to start</button>
-        <div class="preview-stats"><span>Section <b>{{ currentSection }}</b></span><span>Scroll <b>{{ state.progress.toFixed(3) }}</b></span><span>Curve <b>{{ (state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart)).toFixed(3) }}</b></span><span>Ball <b>{{ state.ballProgress.toFixed(3) }}</b></span><span>Lag <b>{{ Math.abs(state.ballProgress - (state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart))).toFixed(3) }}</b></span></div>
+        <div class="preview-stats"><span>Section <b>{{ currentSection }}</b></span><span>Scroll <b>{{ state.progress.toFixed(3) }}</b></span><span>Intro <b>{{ introPreview.progress.toFixed(3) }}</b></span><span>Road reveal <b>{{ introPreview.roadReveal.toFixed(3) }}</b></span><span>Camera handoff <b>{{ introPreview.ballHandoff.toFixed(3) }}</b></span><span>Target curve <b>{{ previewCurveProgress.toFixed(3) }}</b></span><span>Ball <b>{{ state.ballProgress.toFixed(3) }}</b></span><span>Lag <b>{{ Math.abs(state.ballProgress - previewCurveProgress).toFixed(3) }}</b></span></div>
         <h3>Jump to section</h3>
         <div class="button-grid"><button v-for="section in sections" :key="section[0]" @click="jumpTo(section[1])">{{ section[0] }}</button></div>
         <p class="hint">В Preview используйте колесо мыши над viewport или timeline внизу.</p>
@@ -428,6 +482,7 @@ onUnmounted(() => {
         <button @click="copy(JSON.stringify(state.nodes.map(node => Object.values(node.position)), null, 2), 'JSON')">Copy JSON</button>
         <button @click="downloadJson">Download JSON</button>
         <button @click="copy(cameraCode, 'Camera config')">Copy camera config</button>
+        <button @click="copy(introCode, 'ROAD_INTRO')">Copy ROAD_INTRO config</button>
         <p v-if="copyStatus" class="copy-status">{{ copyStatus }}</p>
       </div>
     </aside>
@@ -437,6 +492,8 @@ onUnmounted(() => {
       <span>0.00</span>
       <div class="timeline-track">
         <input v-model.number="state.progress" type="range" min="0" max="1" step="0.001" @input="state.playing = false" />
+        <i v-if="state.intro.enabled" class="intro-marker intro-marker--start" :style="{ left: `${Math.min(1, introPreview.start) * 100}%` }" title="Intro start" />
+        <i v-if="state.intro.enabled" class="intro-marker intro-marker--end" :style="{ left: `${Math.min(1, introPreview.end) * 100}%` }" title="Intro end" />
         <i v-for="section in sections.slice(1, -1)" :key="section[0]" :style="{ left: `${section[1] * 100}%` }" :title="section[0]" />
       </div>
       <span>{{ state.progress.toFixed(3) }}</span>
@@ -495,7 +552,7 @@ button.danger { color:#ef8e7a; }
 .preview-stats { display:grid; grid-template-columns:repeat(3,1fr); gap:5px; margin:8px 0; }.preview-stats span { display:flex; flex-direction:column; gap:5px; padding:9px; color:var(--muted); background:#171718; font-size:8px; }.preview-stats b { color:var(--ink); font-weight:400; }
 .hint { color:var(--muted); font:10px/1.5 system-ui,sans-serif; }.code-preview { min-height:240px; resize:vertical; padding:10px; color:#d7d1c8; background:#080809; border:1px solid var(--line); font-size:9px; line-height:1.5; }.copy-status { color:var(--accent); font-size:10px; }
 .constructor-timeline { position:absolute; z-index:10; inset:auto 0 0; height:58px; display:grid; grid-template-columns:36px 34px 1fr 50px 90px; align-items:center; gap:10px; padding:0 14px; background:#0d0d0e; border-top:1px solid var(--line); color:var(--muted); font-size:9px; }
-.timeline-track { position:relative; }.timeline-track input { display:block; width:100%; accent-color:var(--accent); }.timeline-track i { position:absolute; top:3px; bottom:3px; width:1px; background:#777; pointer-events:none; }.constructor-timeline b { color:var(--ink); font-weight:400; text-align:right; }
+.timeline-track { position:relative; }.timeline-track input { display:block; width:100%; accent-color:var(--accent); }.timeline-track i { position:absolute; top:3px; bottom:3px; width:1px; background:#777; pointer-events:none; }.timeline-track i.intro-marker { top:-2px; bottom:-2px; z-index:2; background:var(--accent); }.timeline-track i.intro-marker--end { background:#e9e4dc; }.constructor-timeline b { color:var(--ink); font-weight:400; text-align:right; }
 .constructor-modal { position:absolute; z-index:30; inset:0; display:grid; place-items:center; background:#000a; }.constructor-modal section { width:min(620px,90vw); padding:18px; background:#121213; border:1px solid var(--line); }.constructor-modal header { display:flex; justify-content:space-between; align-items:center; }.constructor-modal h2 { margin:0;font-size:18px; }.constructor-modal textarea { width:100%; min-height:280px; margin:15px 0; padding:12px; color:var(--ink); background:#080809; border:1px solid var(--line); }.constructor-modal p { color:#e68772; font-size:10px; }
 .constructor-debug { position:fixed; z-index:40; top:62px; left:14px; width:280px; }.constructor-status { position:absolute; z-index:25; inset:52px 340px 58px 0; display:grid; place-items:center; background:#09090a; color:var(--muted); font-size:10px; }.constructor-status.error { color:#e68772; }
 @media (max-width:800px) { .constructor__canvas { right:0; bottom:48vh; }.constructor-panel { top:52vh; left:0; bottom:58px; width:100%; border-left:0; border-top:1px solid var(--line); }.constructor-topbar { grid-template-columns:1fr auto; }.mode-switch { display:none; }.constructor-status { right:0; bottom:48vh; }.constructor-timeline { grid-template-columns:34px 1fr 50px; }.constructor-timeline > span:first-of-type,.constructor-timeline b { display:none; } }

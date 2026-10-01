@@ -24,7 +24,7 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import type { SceneFactory } from '../../three/core/types'
 import { disposeObject } from '../../three/utils/dispose'
 import { createRibbonGeometry, createRoadCurve, getRoadFrame } from '../ribbon-road/route'
-import type { ConstructorState } from './model'
+import { getIntroPreviewState, type ConstructorState } from './model'
 
 const FORWARD = new Vector3(0, 0, 1)
 const SECTIONS = [
@@ -39,6 +39,10 @@ export interface ConstructorBridge {
 }
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
+const smoothstep = (start: number, end: number, value: number): number => {
+  const x = clamp01((value - start) / Math.max(0.0001, end - start))
+  return x * x * (3 - 2 * x)
+}
 const curveFromNodes = (state: ConstructorState) => createRoadCurve(
   state.nodes.map((node) => new Vector3(node.position.x, node.position.y, node.position.z)),
   state.tension,
@@ -71,7 +75,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   light.position.set(-6, 12, 8)
   scene.add(light)
 
-  const roadMaterial = new MeshStandardMaterial({ color: '#e7e1d8', roughness: 0.74, metalness: 0, side: FrontSide })
+  const roadMaterial = new MeshStandardMaterial({ color: '#e7e1d8', roughness: 0.74, metalness: 0, side: FrontSide, transparent: true })
   const ballMaterial = new MeshStandardMaterial({ color: '#eee7dc', roughness: 0.65, metalness: 0 })
   const nodeMaterial = new MeshStandardMaterial({ color: '#aaa7a0', roughness: 0.55 })
   const polygonMaterial = new LineBasicMaterial({ color: '#6c6a65', transparent: true, opacity: 0.65 })
@@ -126,6 +130,11 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   const cameraTarget = new Vector3()
   const desiredCamera = new Vector3()
   const desiredLook = new Vector3()
+  const journeyCamera = new Vector3()
+  const journeyLook = new Vector3()
+  const introCamera = new Vector3()
+  const introLook = new Vector3()
+  const worldUp = new Vector3(0, 1, 0)
   const pointer = new Vector2()
   let lastRevision = -1
   let lastMode = state.mode
@@ -133,6 +142,8 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   let lastFocusNonce = state.focusNonce
   let draggingBefore = ''
   let currentQualityScale = runtime.profile.segmentScale
+  let latestIntroProgress = state.intro.enabled ? 0 : 1
+  let snapPreviewCamera = false
 
   const updateHandles = (): void => {
     for (let index = 0; index < state.nodes.length; index += 1) {
@@ -251,7 +262,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
           camera.position.set(12, 12, Math.min(30, curve.points[0]?.z ?? 24))
           orbit.target.copy(curve.getPointAt(clamp01(state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart))))
           orbit.update()
-        }
+        } else snapPreviewCamera = true
       }
 
       if (state.focusNonce !== lastFocusNonce) {
@@ -268,7 +279,14 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
         if (state.progress >= 1) state.playing = false
       }
 
-      const targetCurveProgress = clamp01(state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart) + 0.02)
+      const intro = getIntroPreviewState(state)
+      latestIntroProgress = intro.progress
+      const journeyTargetProgress = clamp01(state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart) + 0.02)
+      const introBallStart = Math.max(0, state.journeyStart - state.intro.ballStartProgressOffset)
+      const introTargetProgress = introBallStart + (state.intro.ballArrivalProgress - introBallStart) * intro.ballEntry
+      const targetCurveProgress = state.mode === 'preview' && state.intro.enabled
+        ? introTargetProgress + (journeyTargetProgress - introTargetProgress) * intro.ballHandoff
+        : journeyTargetProgress
       const ballBlend = state.mode === 'preview' && state.followScroll ? 1 - Math.exp(-state.ballDamping * Math.min(delta, 0.05)) : 1
       state.ballProgress += (targetCurveProgress - state.ballProgress) * ballBlend
       getRoadFrame(curve, state.ballProgress, tangent, normal, right)
@@ -282,31 +300,47 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
       ball.position.copy(point)
       ball.scale.setScalar(state.ballRadius / 0.46)
       previousBallPosition.copy(point)
-      ball.visible = state.ballVisible
+      ball.visible = state.ballVisible && (state.mode === 'edit' || !state.intro.enabled || intro.ballEntry > 0.005)
 
       if (state.mode === 'preview') {
-        const cameraProgress = clamp01(state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart))
+        const cameraProgress = clamp01(state.ballProgress - 0.02)
         getRoadFrame(curve, cameraProgress, tangent, normal, right)
         cameraTarget.copy(curve.getPointAt(cameraProgress))
-        desiredCamera.copy(cameraTarget)
-          .addScaledVector(tangent, -state.camera.distanceBehind)
-          .addScaledVector(normal, state.camera.heightOffset)
-          .addScaledVector(right, state.camera.sideOffset + pointer.x * state.camera.pointerParallax)
+        const initialSideView = state.intro.enabled ? 1 - smoothstep(0, 1, intro.ballHandoff) : 0
+        const cameraHeight = state.intro.initialSideHeight
+          + (state.camera.heightOffset - state.intro.initialSideHeight) * (1 - initialSideView)
+        const sideOffset = state.intro.initialSideDistance * initialSideView
+          + state.camera.sideOffset * (1 - initialSideView)
+        journeyCamera.copy(cameraTarget)
+          .addScaledVector(tangent, -state.camera.distanceBehind * (1 - initialSideView))
+          .addScaledVector(normal, cameraHeight)
+          .addScaledVector(right, sideOffset + pointer.x * state.camera.pointerParallax)
           .addScaledVector(normal, pointer.y * state.camera.pointerParallax * 0.35)
+        const lookAhead = 0.012 + (state.camera.lookAhead - 0.012) * (1 - initialSideView)
+        journeyLook.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
+        introCamera.copy(journeyCamera).addScaledVector(worldUp, state.intro.cameraLift)
+        introLook.copy(journeyLook).addScaledVector(worldUp, state.intro.cameraLift)
+        desiredCamera.lerpVectors(introCamera, journeyCamera, intro.progress)
+        desiredLook.lerpVectors(introLook, journeyLook, intro.progress)
         const cameraBlend = 1 - Math.exp(-state.camera.damping * Math.min(delta, 0.05))
-        camera.position.lerp(desiredCamera, cameraBlend)
-        desiredLook.copy(curve.getPointAt(clamp01(cameraProgress + state.camera.lookAhead))).addScaledVector(normal, 0.2)
+        if (snapPreviewCamera) {
+          camera.position.copy(desiredCamera)
+          snapPreviewCamera = false
+        } else camera.position.lerp(desiredCamera, cameraBlend)
         camera.lookAt(desiredLook)
       } else orbit.update()
 
       camera.fov = state.camera.fov; camera.near = state.camera.near; camera.far = state.camera.far; camera.updateProjectionMatrix()
-      road.visible = state.showRibbon
+      const roadReveal = state.mode === 'preview' && state.intro.enabled ? intro.roadReveal : 1
+      road.visible = state.showRibbon && roadReveal > 0.001
+      roadMaterial.opacity = roadReveal
+      roadMaterial.depthWrite = roadReveal > 0.98
       handles.visible = state.mode === 'edit' && state.showPoints
       polygon.visible = state.mode === 'edit' && state.showPolygon
       spline.visible = state.mode === 'edit' && state.showSpline
       grid.visible = state.mode === 'edit' && state.showGrid
       axes.visible = state.mode === 'edit' && state.showAxes
-      portal.visible = state.showPortal
+      portal.visible = state.showPortal && (state.mode === 'edit' || (state.progress > 0.34 && state.progress < 0.68))
       transformHelper.visible = state.mode === 'edit' && state.selectedIndex >= 0
     },
     setQuality: (_quality, profile) => { currentQualityScale = profile.segmentScale; state.revision += 1 },
@@ -314,6 +348,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
     stats: () => ({
       scrollProgress: state.progress,
       ribbonProgress: state.progress,
+      transitionProgress: latestIntroProgress,
       ballProgress: state.ballProgress,
       ballPosition: `${ball.position.x.toFixed(1)}, ${ball.position.y.toFixed(1)}, ${ball.position.z.toFixed(1)}`,
       section: sectionAt(state.progress),

@@ -5,15 +5,15 @@ uniform float uFadeStart;
 uniform float uFadeEnd;
 uniform float uFadeStrength;
 uniform float uIntroReveal;
+uniform vec3 uRoadColor;
 
 varying vec3 vNormal;
 varying vec3 vWorldPosition;
 varying float vWave;
 
 void main() {
-  vec3 ivory = vec3(0.91, 0.885, 0.84);
   vec3 violetIvory = vec3(0.82, 0.77, 0.94);
-  vec3 base = mix(ivory, violetIvory, uPurplePhase * 0.7);
+  vec3 base = mix(uRoadColor, violetIvory, uPurplePhase * 0.7);
   vec3 lightDirection = normalize(vec3(-0.4, 0.8, 0.55));
   float diffuse = max(dot(normalize(vNormal), lightDirection), 0.0);
   float rim = pow(1.0 - abs(dot(normalize(vNormal), vec3(0.0, 0.0, 1.0))), 2.2);

@@ -9,6 +9,21 @@ export const BALL_SURFACE_GAP = -0.01
 export const JOURNEY_START = 0.09
 export const JOURNEY_END = 0.82
 
+export type BallShape = 'sphere' | 'faceted' | 'lowPoly'
+
+/** Mutable runtime values exposed in the #debug appearance folders. */
+export const ROAD_APPEARANCE = {
+  width: ROAD_WIDTH,
+  thickness: ROAD_THICKNESS,
+  color: '#e7e1d8',
+}
+
+export const BALL_APPEARANCE: { radius: number; shape: BallShape; color: string } = {
+  radius: BALL_RADIUS,
+  shape: 'sphere',
+  color: '#e7e1d8',
+}
+
 /**
  * Controls how much of the road is visible around the camera.
  * `visibleDistance` is the fully opaque radius, `fadeSoftness` is the length
