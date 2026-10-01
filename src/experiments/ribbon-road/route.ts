@@ -92,6 +92,8 @@ export const ROAD_INTRO = {
   particleRightOffset: 0.65,
   particleViewportOffsetX: 0.1,
   particleVerticalOffset: 0,
+  particleRevealDelay: 0.2,
+  particleRevealDuration: 3,
   particleIntroScale: 0.42,
   particleNoiseAmplitude: 0.24,
   particleNoiseSpeed: 0.42,

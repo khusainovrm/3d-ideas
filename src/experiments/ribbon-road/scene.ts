@@ -528,7 +528,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uHeroReveal!.value = ROAD_INTRO.enabled
         ? reducedMotion
           ? elapsed >= 0.15 ? 1 : 0
-          : smoothstep(0.25, 2.4, elapsed)
+          : clamp01(
+            (elapsed - ROAD_INTRO.particleRevealDelay)
+            / Math.max(0.01, ROAD_INTRO.particleRevealDuration),
+          )
         : 1
       particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
       particleMaterial.uniforms.uIntroNoise!.value = reducedMotion
