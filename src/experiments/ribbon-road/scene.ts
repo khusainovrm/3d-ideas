@@ -30,7 +30,13 @@ import ribbonFragmentShader from './shaders/ribbon.frag.glsl?raw'
 import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import { generateHeroCloud } from './heroCloud'
-import { generateNavigationFigures, NAV_LAYOUT_SCALE_X, NAV_LAYOUT_SCALE_Y } from './navFigures'
+import {
+  generateNavigationFigures,
+  navigationFigureCenter,
+  navigationMobileFigureCenter,
+  NAV_LAYOUT_SCALE_X,
+  NAV_LAYOUT_SCALE_Y,
+} from './navFigures'
 import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
 import type { RoadSectionId } from './navigation'
 import { roadPointValuesAt } from './roadPaths'
@@ -167,6 +173,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
   const shaderPointer = new Vector2()
   const rayPointer = new Vector2()
+  const figureWorld = new Vector3()
+  const figureProjected = new Vector3()
+  const figureScreenCenters = new Float32Array(ROAD_NAV_SECTIONS.length * 2)
   const black = new Color('#070708')
   const purple = new Color(PURPLE_PORTAL.background)
   const background = new Color(black)
@@ -255,6 +264,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     uniforms: {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
       uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
+      uPointerRadius: { value: NAV_CONSTELLATION.pointerDistortionRadius },
+      uPointerAttraction: { value: NAV_CONSTELLATION.pointerAttraction },
       uHeroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
       uNavFormation: { value: 0 },
       uNavHover0: { value: 0 }, uNavHover1: { value: 0 }, uNavHover2: { value: 0 },
@@ -394,7 +405,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     ease: 'none',
     scrollTrigger: { trigger: container.parentElement, start: 'top top', end: 'bottom bottom', scrub: runtime.reducedMotion ? false : 0.45 },
   })
-  let hoverTween: gsap.core.Tween | undefined
   let pulseTween: gsap.core.Tween | undefined
   let hoveredFigure = -1
   let selectedFigure = -1
@@ -404,13 +414,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   let formationProgress = 0
   let revealCompleteSent = false
   let figuresReadySent = false
+  let pointerInside = false
+  let pointerDistortionStrength = 0
+  let lastFigureLayoutSentAt = -Infinity
   let orderedSectionIds: RoadSectionId[] = ROAD_NAV_SECTIONS.map(({ id }) => id)
-  const onNavFocus = (event: Event): void => {
-    hoveredFigure = (event as CustomEvent<number>).detail
-    const active = hoveredFigure >= 0
-    hoverTween?.kill()
-    hoverTween = gsap.to(state, { hover: active ? 1 : 0, duration: 0.45, ease: 'sine.out' })
-  }
   const onNavSelect = (event: Event): void => {
     const detail = (event as CustomEvent<{ figureIndex: number; roadIndex?: number }>).detail
     selectedFigure = detail.figureIndex
@@ -442,11 +449,62 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (coarsePointer) return
     pointer.x = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1
     pointer.y = -((event.clientY / Math.max(1, window.innerHeight)) * 2 - 1)
+    pointerInside = true
     rayPointer.set(pointer.x, pointer.y)
     pointerSamplePending = true
+    hoveredFigure = figureAtClientPoint(event.clientX, event.clientY)
+    if (container.parentElement) container.parentElement.style.cursor = hoveredFigure >= 0 ? 'pointer' : ''
+  }
+  const onPointerLeave = (): void => {
+    pointerInside = false
+    hoveredFigure = -1
+    if (container.parentElement) container.parentElement.style.cursor = ''
+  }
+  const updateFigureScreenCenters = (): void => {
+    if (!particles) return
+    particles.updateMatrixWorld(true)
+    const mobile = window.innerWidth <= 820
+    const count = Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length)
+    for (let index = 0; index < count; index += 1) {
+      const center = mobile ? navigationMobileFigureCenter(index) : navigationFigureCenter(index)
+      figureWorld.set(center[0], center[1], center[2])
+      particles.localToWorld(figureWorld)
+      figureProjected.copy(figureWorld).project(camera)
+      figureScreenCenters[index * 2] = (figureProjected.x * 0.5 + 0.5) * window.innerWidth
+      figureScreenCenters[index * 2 + 1] = (-figureProjected.y * 0.5 + 0.5) * window.innerHeight
+    }
+  }
+  const figureAtClientPoint = (clientX: number, clientY: number): number => {
+    if (!particles || formationProgress < 0.999 || visibleDomSection() !== 'hero') return -1
+    updateFigureScreenCenters()
+    let closest = -1
+    let closestDistance: number = NAV_CONSTELLATION.figureHitRadius
+    const count = Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length)
+    for (let index = 0; index < count; index += 1) {
+      const screenX = figureScreenCenters[index * 2] ?? -1000
+      const screenY = figureScreenCenters[index * 2 + 1] ?? -1000
+      const distance = Math.hypot(clientX - screenX, clientY - screenY)
+      if (distance < closestDistance) {
+        closestDistance = distance
+        closest = index
+      }
+    }
+    return closest
+  }
+  const onPointerClick = (event: PointerEvent): void => {
+    if (event.button !== 0) return
+    const target = event.target
+    if (target instanceof Element && target.closest('a, button, input, select, textarea')) return
+    const figureIndex = figureAtClientPoint(event.clientX, event.clientY)
+    const section = ROAD_NAV_SECTIONS[figureIndex]
+    if (!section) return
+    container.dispatchEvent(new CustomEvent('roadfigureselect', {
+      detail: {figureIndex, sectionId: section.id},
+    }))
   }
   window.addEventListener('pointermove', onPointerMove, { passive: true })
-  container.addEventListener('roadnavfocus', onNavFocus)
+  window.addEventListener('pointerup', onPointerClick)
+  document.documentElement.addEventListener('mouseleave', onPointerLeave)
   container.addEventListener('roadnavselect', onNavSelect)
   container.addEventListener('roadorderchange', onRoadOrderChange)
   container.addEventListener('roadreset', onRoadReset)
@@ -626,7 +684,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
       const hoverBlend = 1 - Math.exp(-NAV_CONSTELLATION.hoverResponse * Math.min(delta, 0.05))
       for (let index = 0; index < hoverWeights.length; index += 1) {
-        const target = index === hoveredFigure || index === selectedFigure ? 1 : 0
+        const target = index === selectedFigure ? 1 : 0
         const current = hoverWeights[index] ?? 0
         hoverWeights[index] = current + (target - current) * hoverBlend
       }
@@ -641,7 +699,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uNavHover3!.value = hoverWeights[3]
       particleMaterial.uniforms.uNavHover4!.value = hoverWeights[4]
       particleMaterial.uniforms.uNavSelectedFigure!.value = selectedFigure
-      particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
+      const distortionTarget = !coarsePointer && !reducedMotion && pointerInside && visibleDomSection() === 'hero' ? 1 : 0
+      pointerDistortionStrength += (distortionTarget - pointerDistortionStrength)
+        * (1 - Math.exp(-10 * Math.min(delta, 0.05)))
+      particleMaterial.uniforms.uPointerStrength!.value = pointerDistortionStrength
       particleMaterial.uniforms.uIntroNoise!.value = reducedMotion
         ? 0
         : 1 - smoothstep(0.08, 0.92, introProgress)
@@ -671,6 +732,22 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         particles.position.lerpVectors(introParticlePosition, particleAnchor, introProgress)
         particles.quaternion.slerpQuaternions(introParticleQuaternion, particleQuaternion, introProgress)
         particles.scale.setScalar(ROAD_INTRO.particleIntroScale + (1 - ROAD_INTRO.particleIntroScale) * introProgress)
+
+        updateFigureScreenCenters()
+        if (formationProgress >= 0.999
+          && visibleDomSection() === 'hero'
+          && elapsed - lastFigureLayoutSentAt >= 0.1) {
+          lastFigureLayoutSentAt = elapsed
+          const count = Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length)
+          container.dispatchEvent(new CustomEvent('roadfigurelayout', {
+            detail: {
+              positions: Array.from({length: count}, (_, index) => ({
+                x: figureScreenCenters[index * 2] ?? 0,
+                y: figureScreenCenters[index * 2 + 1] ?? 0,
+              })),
+            },
+          }))
+        }
 
         const connectionsActive = RIBBON_ROAD_FEATURES.particleConnections
           && !coarsePointer
@@ -797,12 +874,13 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     },
     dispose: () => {
       window.removeEventListener('pointermove', onPointerMove)
-      container.removeEventListener('roadnavfocus', onNavFocus)
+      window.removeEventListener('pointerup', onPointerClick)
+      document.documentElement.removeEventListener('mouseleave', onPointerLeave)
+      if (container.parentElement) container.parentElement.style.cursor = ''
       container.removeEventListener('roadnavselect', onNavSelect)
       container.removeEventListener('roadorderchange', onRoadOrderChange)
       container.removeEventListener('roadreset', onRoadReset)
       container.removeEventListener('roadcomplete', onComplete)
-      hoverTween?.kill()
       pulseTween?.kill()
       scrollTween.scrollTrigger?.kill()
       scrollTween.kill()

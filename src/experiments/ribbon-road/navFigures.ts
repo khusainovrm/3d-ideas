@@ -23,6 +23,14 @@ export const navigationFigureCenter = (index: number): readonly [number, number,
   ]
 }
 
+const MOBILE_FIGURE_CENTERS: readonly (readonly [number, number, number])[] = [
+  [-2.3, 1, 0], [0, 0.05, 0], [2, 1, 0], [-1.2, -1.5, 0], [1.25, -2.25, 0],
+]
+
+export const navigationMobileFigureCenter = (index: number): readonly [number, number, number] => (
+  MOBILE_FIGURE_CENTERS[index] ?? navigationFigureCenter(index)
+)
+
 const fract = (value: number): number => value - Math.floor(value)
 const seeded = (index: number, salt: number): number => fract(Math.sin(index * 91.713 + salt * 17.17) * 43758.5453)
 const gaussian = (index: number, salt: number): number => {

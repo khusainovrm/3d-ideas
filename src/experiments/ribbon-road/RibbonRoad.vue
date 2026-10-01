@@ -10,10 +10,10 @@
           type="button"
           class="road-nav__cta"
           :class="{'road-nav__cta--reset': navigationPhase === 'journey'}"
-          :disabled="navigationPhase === 'transitioning' || navigationPhase === 'resetting'"
-          :aria-label="navigationPhase === 'journey' ? 'Сбросить маршрут и вернуться к выбору секции' : 'Начать с раздела Регистрация'"
-          @click="navigationPhase === 'journey' ? resetJourney() : selectSection('road-registration')"
-      >{{ navigationPhase === 'journey' ? 'Сбросить' : 'Регистрация' }}</button>
+          :disabled="navigationPhase !== 'journey'"
+          :aria-label="navigationPhase === 'journey' ? 'Сбросить маршрут и вернуться к выбору секции' : 'Сначала выберите фигуру маршрута'"
+          @click="resetJourney"
+      >{{ navigationPhase === 'journey' ? 'Сбросить' : 'Выберите маршрут' }}</button>
     </nav>
 
     <div v-if="debug" ref="paneHost" class="road-debug"/>
@@ -27,31 +27,21 @@
         <p class="road-hero__lead">Путешествие через идеи,<br/>технологии и будущее.</p>
         <p class="road-hero__date"><strong>20 ноября</strong><span>10:00–18:00 МСК · Online</span>
         </p>
-        <div class="road-actions">
-          <a class="road-button road-button--primary" href="#road-registration"
-             @click.prevent="selectSection('road-registration')">Зарегистрироваться <span>↗</span></a>
-          <a class="road-button" href="#road-about" @click.prevent="selectSection('road-about')">Узнать
-            подробнее</a>
-        </div>
       </div>
 
-      <div class="road-orbits" aria-label="Быстрая навигация">
-        <button
+      <div
+          v-show="navigationPhase === 'awaiting-selection'"
+          class="road-figure-labels"
+          aria-hidden="true"
+      >
+        <span
             v-for="(link, index) in visibleHeroLinks"
             :key="link.target"
-            type="button"
-            :class="['road-orbit', link.className, {'road-orbit--ready': figuresReady}]"
-            :disabled="!figuresReady || !['awaiting-selection', 'journey'].includes(navigationPhase)"
-            :aria-hidden="!figuresReady"
-            :aria-label="`Начать с раздела ${link.label}`"
-            @click="selectSection(link.target)"
-            @mouseenter="focusNav(index)"
-            @mouseleave="focusNav(-1)"
-            @focus="focusNav(index)"
-            @blur="focusNav(-1)"
-        ><i/><span>{{ link.label }}</span></button>
+            :class="['road-figure-label', link.className, {'road-figure-label--ready': figuresReady}]"
+            :style="figureLabelStyle(index)"
+        >{{ link.label }}</span>
       </div>
-      <p class="road-hero__hint">Выберите точку маршрута <b>↓</b></p>
+      <p class="road-hero__hint">Выберите фигуру маршрута <b>↓</b></p>
     </section>
 
     <section id="road-about" class="road-section road-about" :style="{order: sectionOrder('road-about')}">
@@ -249,12 +239,19 @@ const submitted = ref(false)
 const navigationPhase = ref<NavigationPhase>('locked-intro')
 const selectedSection = ref<RoadSectionId | null>(null)
 const figuresReady = ref(false)
+const figureLabelPositions = ref<readonly {x: number; y: number}[]>([])
 const journeyFloorY = ref(0)
 const {container, ready, error, metrics} = useThreeScene(createRibbonRoadScene)
 const orderedSections = computed<readonly RoadSectionId[]>(() => selectedSection.value
   ? [selectedSection.value, ...ORIGINAL_SECTION_ORDER.filter((id) => id !== selectedSection.value)]
   : ORIGINAL_SECTION_ORDER)
 const sectionOrder = (id: RoadSectionId): number => orderedSections.value.indexOf(id) + 1
+const figureLabelStyle = (index: number): Record<string, string> => {
+  const position = figureLabelPositions.value[index]
+  return position
+    ? {left: `${position.x}px`, top: `${position.y + 34}px`}
+    : {visibility: 'hidden'}
+}
 const {debug, paneHost} = useDebugPane(metrics, {
   title: 'Ribbon Road runtime',
   bindings: [
@@ -321,7 +318,6 @@ let fallbackTimer = 0
 let scrollFrame = 0
 let scrollResolve: (() => void) | undefined
 let journeyResizeFrame = 0
-let focusFigureAfterReset = false
 let previousScrollRestoration: ScrollRestoration = 'auto'
 let cleanupSceneEvents = (): void => {}
 
@@ -336,13 +332,10 @@ const armNavigationFallback = (): void => {
   window.clearTimeout(fallbackTimer)
   fallbackTimer = window.setTimeout(() => {
     if (navigationPhase.value === 'locked-intro' || navigationPhase.value === 'forming-figures') {
-      figuresReady.value = true
-      navigationPhase.value = 'awaiting-selection'
+      figuresReady.value = false
+      navigationPhase.value = 'journey'
+      scrollGate.unlock()
       syncNavigationMetrics()
-      if (focusFigureAfterReset) {
-        focusFigureAfterReset = false
-        void nextTick(() => page.value?.querySelector<HTMLButtonElement>('.road-orbit:not(:disabled)')?.focus())
-      }
     }
   }, 9000)
 }
@@ -399,10 +392,6 @@ const scrollTo = (target: string): void => {
   void animateScrollTo(targetY, NAV_CONSTELLATION.scrollDuration)
 }
 
-const focusNav = (index: number): void => {
-  container.value?.dispatchEvent(new CustomEvent<number>('roadnavfocus', {detail: index}))
-}
-
 const selectSection = async (target: RoadSectionId): Promise<void> => {
   if (navigationPhase.value !== 'awaiting-selection' && navigationPhase.value !== 'journey') return
   const figureIndex = ROAD_NAV_SECTIONS.findIndex(({id}) => id === target)
@@ -440,11 +429,9 @@ const selectSection = async (target: RoadSectionId): Promise<void> => {
 const resetJourney = async (): Promise<void> => {
   if (navigationPhase.value !== 'journey') return
   navigationPhase.value = 'resetting'
-  focusFigureAfterReset = true
   journeyFloorY.value = 0
   figuresReady.value = false
   selectedSection.value = null
-  focusNav(-1)
   syncNavigationMetrics()
   cancelScrollAnimation()
   await refreshOrderedLayout()
@@ -480,17 +467,25 @@ onMounted(() => {
     figuresReady.value = true
     navigationPhase.value = 'awaiting-selection'
     syncNavigationMetrics()
-    if (focusFigureAfterReset) {
-      focusFigureAfterReset = false
-      void nextTick(() => page.value?.querySelector<HTMLButtonElement>('.road-orbit:not(:disabled)')?.focus())
-    }
+  }
+  const onFigureSelect = (event: Event): void => {
+    const sectionId = (event as CustomEvent<{sectionId?: RoadSectionId}>).detail?.sectionId
+    if (sectionId) void selectSection(sectionId)
+  }
+  const onFigureLayout = (event: Event): void => {
+    const positions = (event as CustomEvent<{positions?: {x: number; y: number}[]}>).detail?.positions
+    if (positions) figureLabelPositions.value = positions
   }
   container.value?.addEventListener('roadherorevealcomplete', onHeroRevealComplete)
   container.value?.addEventListener('roadfiguresready', onFiguresReady)
+  container.value?.addEventListener('roadfigureselect', onFigureSelect)
+  container.value?.addEventListener('roadfigurelayout', onFigureLayout)
   armNavigationFallback()
   cleanupSceneEvents = (): void => {
     container.value?.removeEventListener('roadherorevealcomplete', onHeroRevealComplete)
     container.value?.removeEventListener('roadfiguresready', onFiguresReady)
+    container.value?.removeEventListener('roadfigureselect', onFigureSelect)
+    container.value?.removeEventListener('roadfigurelayout', onFigureLayout)
   }
   if (!page.value) return
   const reducedMotion = reducedMotionQuery.matches
@@ -562,8 +557,9 @@ window.addEventListener('resize', refreshJourneyFloor, {passive: true})
 
 watch(error, (value) => {
   if (!value || navigationPhase.value === 'journey') return
-  figuresReady.value = true
-  navigationPhase.value = 'awaiting-selection'
+  figuresReady.value = false
+  navigationPhase.value = 'journey'
+  scrollGate.unlock()
   syncNavigationMetrics()
 })
 </script>
@@ -736,6 +732,7 @@ watch(error, (value) => {
   min-height: 100svh;
   display: flex;
   align-items: center;
+  overflow: hidden;
 }
 
 .road-hero__copy {
@@ -828,61 +825,28 @@ watch(error, (value) => {
   background: #fff;
 }
 
-.road-orbits {
+.road-figure-labels {
   position: absolute;
   z-index: 4;
-  inset: 65px 4vw 45px 47%;
+  inset: 0;
+  display: block !important;
   pointer-events: none;
 }
 
-.road-orbit {
+.road-figure-label {
   position: absolute;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 8px;
-  min-width: 44px;
-  min-height: 44px;
-  color: rgba(237, 232, 224, .7);
-  background: none;
-  border: 0;
+  display: block;
+  color: rgba(237, 232, 224, .62);
   font: 8px ui-monospace, monospace;
   letter-spacing: .06em;
   white-space: nowrap;
-  cursor: pointer;
-  pointer-events: auto;
   opacity: 0;
-  transform: scale(.82);
-  transition: color .25s, transform .3s, opacity .45s;
+  transform: translate(-50%, 34px);
+  transition: opacity .45s;
 }
 
-.road-orbit--ready {
+.road-figure-label--ready {
   opacity: 1;
-  transform: scale(1);
-}
-
-.road-orbit:disabled {
-  pointer-events: none;
-}
-
-.road-orbit i {
-  width: 11px;
-  height: 11px;
-  border-radius: 50%;
-  background: #eee9df;
-  box-shadow: 0 0 7px 2px rgba(237, 232, 224, .75), 0 0 24px rgba(237, 232, 224, .3);
-  transition: transform .3s, background .3s;
-}
-
-.road-orbit:hover, .road-orbit:focus-visible {
-  color: #fff;
-  transform: scale(1.08);
-  outline: none;
-}
-
-.road-orbit:hover i, .road-orbit:focus-visible i {
-  transform: scale(1.45);
-  background: var(--orange);
 }
 
 .road-orbit--about {
@@ -1316,10 +1280,6 @@ watch(error, (value) => {
     font-size: clamp(67px, 20vw, 130px);
   }
 
-  .road-orbits {
-    inset: 54% 12px 5% 6%;
-  }
-
   .road-orbit--about {
     left: 0;
     top: 4%;
@@ -1441,10 +1401,6 @@ watch(error, (value) => {
     width: 100%;
   }
 
-  .road-orbits {
-    inset: 57% 7px 4% 2%;
-  }
-
   .road-heading h2 {
     font-size: clamp(49px, 16vw, 78px);
   }
@@ -1502,7 +1458,7 @@ watch(error, (value) => {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .road-orbit, .road-orbit i {
+  .road-figure-label {
     transition: none;
   }
 }

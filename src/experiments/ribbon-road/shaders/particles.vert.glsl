@@ -5,6 +5,8 @@ uniform float uVisibility;
 uniform vec2 uPointer;
 uniform vec2 uViewport;
 uniform float uPointerStrength;
+uniform float uPointerRadius;
+uniform float uPointerAttraction;
 uniform float uHeroReveal;
 uniform float uNavFormation;
 uniform float uNavHover0;
@@ -40,7 +42,6 @@ attribute vec3 aNavData;
 
 varying float vAlpha;
 varying float vAccent;
-varying float vPointer;
 varying float vNavBrightness;
 
 float navHover(float figureIndex) {
@@ -110,8 +111,13 @@ void main() {
   vec4 clip = projectionMatrix * mv;
   vec2 particleNdc = clip.xy / max(0.0001, clip.w);
   vec2 pointerDeltaPx = (particleNdc - uPointer) * 0.5 * uViewport;
-  float pointerDistancePx = max(abs(pointerDeltaPx.x), abs(pointerDeltaPx.y));
-  float pointerInfluence = (1.0 - smoothstep(26.0, 30.0, pointerDistancePx)) * uPointerStrength;
+  float pointerDistancePx = length(pointerDeltaPx);
+  float pointerInfluence = (1.0 - smoothstep(uPointerRadius * 0.2, uPointerRadius, pointerDistancePx))
+    * uPointerStrength * heroAmount;
+  // Pull nearby particles towards the pointer in screen space. The center
+  // remains stable while the outer edge creates a soft local distortion.
+  vec2 pointerPull = (uPointer - particleNdc) * pointerInfluence * uPointerAttraction;
+  clip.xy += pointerPull * clip.w;
   float perspective = 28.0 / max(2.0, -mv.z);
   float heroGlow = mix(1.0, aHeroGlow, heroAmount);
   // The reference is photographic dust: most hero grains are close to one
@@ -132,7 +138,6 @@ void main() {
   float figureAlpha = mix(1.0, 1.3, figureProgress);
   vAlpha = uVisibility * particleAlpha * mix(1.0, revealOpacity, heroAmount) * cloudDim * figureAlpha;
   vAccent = step(mix(0.965, 0.997, heroAmount), aSeed);
-  vPointer = pointerInfluence;
   float formedBrightness = mix(1.0, 1.35, figureProgress);
   float selectedBrightness = mix(1.0, uNavSelectedBrightness, selectedAmount * figureProgress);
   vNavBrightness = formedBrightness

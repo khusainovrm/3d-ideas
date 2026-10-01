@@ -40,5 +40,8 @@ export const NAV_CONSTELLATION = {
   checkerStepX: 0.13,
   checkerStepY: 0.105,
   figureSize: 0.07,
+  figureHitRadius: 58,
+  pointerDistortionRadius: 96,
+  pointerAttraction: 0.16,
   scrollDuration: 1.2,
 } as const
