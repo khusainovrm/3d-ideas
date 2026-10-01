@@ -7,12 +7,15 @@ import {
   BufferGeometry,
   Color,
   DirectionalLight,
+  DynamicDrawUsage,
   FrontSide,
+  LineSegments,
   Matrix4,
   Mesh,
   MeshStandardMaterial,
   Points,
   Quaternion,
+  Raycaster,
   ShaderMaterial,
   SphereGeometry,
   Vector2,
@@ -33,6 +36,7 @@ import {
   ROAD_THICKNESS,
   ROAD_VISIBILITY,
   ROAD_INTRO,
+  PARTICLE_CONNECTIONS,
   PURPLE_PORTAL,
   RIBBON_ROAD_FEATURES,
   SIDE_CAMERA,
@@ -53,6 +57,12 @@ export const ROAD_SECTIONS = {
 } as const
 
 type RoadSection = keyof typeof ROAD_SECTIONS
+
+interface ParticleConnection {
+  from: number
+  to: number
+  createdAt: number
+}
 
 const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
@@ -143,6 +153,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches
   const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
   const shaderPointer = new Vector2()
+  const rayPointer = new Vector2()
   const black = new Color('#070708')
   const purple = new Color(PURPLE_PORTAL.background)
   const background = new Color(black)
@@ -170,6 +181,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const journeyLookAt = new Vector3()
   const introCameraPosition = new Vector3()
   const introLookAt = new Vector3()
+  const connectionFrom = new Vector3()
+  const connectionTo = new Vector3()
+  const raycaster = new Raycaster()
+  raycaster.params.Points = { threshold: PARTICLE_CONNECTIONS.hoverThreshold }
   const portalDelta = new Vector3()
   const portalTangent = new Vector3()
   const portalNormal = new Vector3()
@@ -183,6 +198,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   let ribbon: Mesh | undefined
   let particles: Points | undefined
   let ball: Mesh<SphereGeometry, MeshStandardMaterial> | undefined
+  let pointerSamplePending = false
+  let lastHoveredParticle = -1
+  const particleConnections: ParticleConnection[] = []
 
   scene.background = background
   renderer.setClearColor(black, 1)
@@ -227,6 +245,39 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     depthWrite: false,
     blending: AdditiveBlending,
   })
+  const connectionPositions = new Float32Array(PARTICLE_CONNECTIONS.maxLines * 2 * 3)
+  const connectionAlphas = new Float32Array(PARTICLE_CONNECTIONS.maxLines * 2)
+  const connectionGeometry = new BufferGeometry()
+  const connectionPositionAttribute = new BufferAttribute(connectionPositions, 3)
+  const connectionAlphaAttribute = new BufferAttribute(connectionAlphas, 1)
+  connectionPositionAttribute.setUsage(DynamicDrawUsage)
+  connectionAlphaAttribute.setUsage(DynamicDrawUsage)
+  connectionGeometry.setAttribute('position', connectionPositionAttribute)
+  connectionGeometry.setAttribute('aAlpha', connectionAlphaAttribute)
+  const connectionMaterial = new ShaderMaterial({
+    vertexShader: `
+      attribute float aAlpha;
+      varying float vAlpha;
+      void main() {
+        vAlpha = aAlpha;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+      }
+    `,
+    fragmentShader: `
+      varying float vAlpha;
+      void main() {
+        gl_FragColor = vec4(0.91, 0.89, 0.85, vAlpha);
+      }
+    `,
+    transparent: true,
+    depthWrite: false,
+    depthTest: false,
+  })
+  const connectionLines = new LineSegments(connectionGeometry, connectionMaterial)
+  connectionLines.frustumCulled = false
+  connectionLines.renderOrder = 4
+  connectionLines.visible = false
+  scene.add(connectionLines)
   const portalMaterial = new MeshStandardMaterial({
     color: PURPLE_PORTAL.color,
     emissive: PURPLE_PORTAL.emissive,
@@ -293,6 +344,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (coarsePointer) return
     pointer.x = (event.clientX / Math.max(1, window.innerWidth)) * 2 - 1
     pointer.y = -((event.clientY / Math.max(1, window.innerHeight)) * 2 - 1)
+    rayPointer.set(pointer.x, pointer.y)
+    pointerSamplePending = true
   }
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   container.addEventListener('roadnavfocus', onNavFocus)
@@ -430,6 +483,74 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         particles.position.lerpVectors(introParticlePosition, particleAnchor, introProgress)
         particles.quaternion.slerpQuaternions(introParticleQuaternion, particleQuaternion, introProgress)
         particles.scale.setScalar(ROAD_INTRO.particleIntroScale + (1 - ROAD_INTRO.particleIntroScale) * introProgress)
+
+        const connectionsActive = RIBBON_ROAD_FEATURES.particleConnections
+          && !coarsePointer
+          && !reducedMotion
+          && introProgress <= 0.001
+        connectionLines.visible = connectionsActive
+        connectionLines.position.copy(particles.position)
+        connectionLines.quaternion.copy(particles.quaternion)
+        connectionLines.scale.copy(particles.scale)
+
+        if (!connectionsActive) {
+          lastHoveredParticle = -1
+          particleConnections.length = 0
+          connectionGeometry.setDrawRange(0, 0)
+          pointerSamplePending = false
+        } else {
+          particles.updateMatrixWorld(true)
+          if (pointerSamplePending) {
+            raycaster.setFromCamera(rayPointer, camera)
+            const hit = raycaster.intersectObject(particles, false)[0]
+            const hoveredParticle = hit?.index ?? -1
+            if (hoveredParticle >= 0 && hoveredParticle !== lastHoveredParticle) {
+              if (lastHoveredParticle >= 0) {
+                if (particleConnections.length >= PARTICLE_CONNECTIONS.maxLines) particleConnections.shift()
+                particleConnections.push({ from: lastHoveredParticle, to: hoveredParticle, createdAt: elapsed })
+              }
+              lastHoveredParticle = hoveredParticle
+            }
+            pointerSamplePending = false
+          }
+
+          const heroPositions = particles.geometry.getAttribute('position') as BufferAttribute
+          const seeds = particles.geometry.getAttribute('aSeed') as BufferAttribute
+          const noiseTime = elapsed * ROAD_INTRO.particleNoiseSpeed
+          const introNoise = 1 - smoothstep(0.08, 0.92, introProgress)
+          const sampleParticle = (index: number, target: Vector3): void => {
+            target.fromBufferAttribute(heroPositions, index)
+            const seed = seeds.getX(index)
+            const phase = seed * 47.123
+            const amplitude = ROAD_INTRO.particleNoiseAmplitude
+              * (0.55 + (seed * 73.71 % 1) * 0.45)
+              * introNoise
+            target.x += (Math.sin(noiseTime * 0.83 + phase) + Math.sin(noiseTime * 1.71 + phase * 1.37) * 0.46) * amplitude
+            target.y += (Math.cos(noiseTime * 0.71 + phase * 1.91) + Math.sin(noiseTime * 1.43 + phase * 0.67) * 0.42) * amplitude
+            target.z += (Math.sin(noiseTime * 0.59 + phase * 2.13) + Math.cos(noiseTime * 1.27 + phase * 0.91) * 0.36) * amplitude
+            target.x += Math.sin(elapsed * 0.16 + seed * 19) * 0.035
+            target.y += Math.cos(elapsed * 0.13 + seed * 23) * 0.03
+          }
+
+          const fadeDuration = Math.max(0.05, PARTICLE_CONNECTIONS.fadeDuration)
+          for (let index = particleConnections.length - 1; index >= 0; index -= 1) {
+            if (elapsed - particleConnections[index]!.createdAt >= fadeDuration) particleConnections.splice(index, 1)
+          }
+          particleConnections.forEach((connection, index) => {
+            sampleParticle(connection.from, connectionFrom)
+            sampleParticle(connection.to, connectionTo)
+            const positionOffset = index * 6
+            connectionPositions.set(connectionFrom.toArray(), positionOffset)
+            connectionPositions.set(connectionTo.toArray(), positionOffset + 3)
+            const life = clamp01((elapsed - connection.createdAt) / fadeDuration)
+            const alpha = (1 - smoothstep(0, 1, life)) * 0.38
+            connectionAlphas[index * 2] = alpha
+            connectionAlphas[index * 2 + 1] = alpha
+          })
+          connectionGeometry.setDrawRange(0, particleConnections.length * 2)
+          connectionPositionAttribute.needsUpdate = true
+          connectionAlphaAttribute.needsUpdate = true
+        }
       }
       ribbonMaterial.uniforms.uTime!.value = elapsed
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
@@ -485,6 +606,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       disposeObject(scene)
       ribbonMaterial.dispose()
       particleMaterial.dispose()
+      connectionGeometry.dispose()
+      connectionMaterial.dispose()
       portalMaterial.dispose()
     },
   }

@@ -37,6 +37,13 @@ export const PURPLE_PORTAL = {
 export const RIBBON_ROAD_FEATURES = {
   cinematic3DCamera: true,
   horizontalPointerCamera: true,
+  particleConnections: false,
+}
+
+export const PARTICLE_CONNECTIONS = {
+  fadeDuration: 6,
+  maxLines: 64,
+  hoverThreshold: 0.22,
 }
 
 export const SIDE_CAMERA = {
