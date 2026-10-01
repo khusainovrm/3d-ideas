@@ -5,6 +5,7 @@ uniform float uVisibility;
 uniform vec2 uPointer;
 uniform vec2 uViewport;
 uniform float uPointerStrength;
+uniform float uHeroReveal;
 uniform float uIntroNoise;
 uniform float uNoiseAmplitude;
 uniform float uNoiseSpeed;
@@ -15,6 +16,11 @@ attribute vec3 aRegistration;
 attribute vec3 aPartners;
 attribute float aSeed;
 attribute float aSize;
+attribute float aJourneyVisibility;
+attribute float aHeroSize;
+attribute float aHeroAlpha;
+attribute float aHeroGlow;
+attribute float aHeroDrift;
 
 varying float vAlpha;
 varying float vAccent;
@@ -29,6 +35,14 @@ vec3 statePosition(float state) {
 
 void main() {
   vec3 p = statePosition(uState);
+  float heroAmount = 1.0 - smoothstep(0.0, 0.85, uState);
+  float heroReveal = smoothstep(0.0, 1.0, uHeroReveal);
+
+  // On page entry the entire measured cloud grows out of its visual centre.
+  // Only the hero state is affected; later morph targets keep their positions.
+  vec3 heroOrigin = vec3(0.96, -0.32, 0.0);
+  float heroExpansion = sqrt(heroReveal);
+  p = mix(heroOrigin, p, mix(1.0, heroExpansion, heroAmount));
 
   // A few incommensurate waves give every particle a slow, non-repeating
   // drift without the cost and visual agitation of high-frequency noise.
@@ -40,10 +54,11 @@ void main() {
     cos(noiseTime * 0.71 + phase * 1.91) + sin(noiseTime * 1.43 + phase * 0.67) * 0.42,
     sin(noiseTime * 0.59 + phase * 2.13) + cos(noiseTime * 1.27 + phase * 0.91) * 0.36
   );
-  p += introDrift * uNoiseAmplitude * personalAmplitude * uIntroNoise;
+  float driftStrength = mix(1.0, aHeroDrift, heroAmount);
+  p += introDrift * uNoiseAmplitude * personalAmplitude * uIntroNoise * driftStrength;
 
-  p.x += sin(uTime * 0.16 + aSeed * 19.0) * 0.035;
-  p.y += cos(uTime * 0.13 + aSeed * 23.0) * 0.03;
+  p.x += sin(uTime * 0.16 + aSeed * 19.0) * 0.035 * driftStrength;
+  p.y += cos(uTime * 0.13 + aSeed * 23.0) * 0.03 * driftStrength;
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   vec4 clip = projectionMatrix * mv;
   vec2 particleNdc = clip.xy / max(0.0001, clip.w);
@@ -51,9 +66,18 @@ void main() {
   float pointerDistancePx = max(abs(pointerDeltaPx.x), abs(pointerDeltaPx.y));
   float pointerInfluence = (1.0 - smoothstep(26.0, 30.0, pointerDistancePx)) * uPointerStrength;
   float perspective = 28.0 / max(2.0, -mv.z);
-  gl_PointSize = min(7.0, aSize * uPixelRatio * perspective);
+  float revealGlow = smoothstep(0.7, 1.0, heroReveal);
+  float heroGlow = mix(1.0, aHeroGlow, heroAmount * revealGlow);
+  // The reference is photographic dust: most hero grains are close to one
+  // physical pixel, while only the three terminal nodes get a larger halo.
+  float heroSize = aHeroSize * 0.6 * mix(0.62, 1.0, heroReveal);
+  float particleSize = mix(aSize, heroSize, heroAmount);
+  gl_PointSize = min(12.0, particleSize * heroGlow * uPixelRatio * perspective);
   gl_Position = clip;
-  vAlpha = uVisibility * (0.22 + fract(aSeed * 31.7) * 0.48);
-  vAccent = step(0.965, aSeed);
+  float regularAlpha = (0.22 + fract(aSeed * 31.7) * 0.48) * aJourneyVisibility;
+  float revealOpacity = heroReveal * mix(0.42, 1.0, heroReveal);
+  float particleAlpha = mix(regularAlpha, aHeroAlpha * 0.82, heroAmount);
+  vAlpha = uVisibility * particleAlpha * mix(1.0, revealOpacity, heroAmount);
+  vAccent = step(mix(0.965, 0.997, heroAmount), aSeed);
   vPointer = pointerInfluence;
 }

@@ -29,6 +29,7 @@ import ribbonVertexShader from './shaders/ribbon.vert.glsl?raw'
 import ribbonFragmentShader from './shaders/ribbon.frag.glsl?raw'
 import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
+import { generateHeroCloud } from './heroCloud'
 import {
   BALL_RADIUS,
   BALL_SURFACE_GAP,
@@ -67,7 +68,8 @@ interface ParticleConnection {
   createdAt: number
 }
 
-const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
+const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 4000, medium: 8000, high: 16000 }
+const JOURNEY_PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
 const createBallGeometry = (shape: BallShape, segments: number): BufferGeometry => {
@@ -111,24 +113,21 @@ const seeded = (index: number, salt: number): number => {
   return value - Math.floor(value)
 }
 
-const buildParticleGeometry = (count: number): BufferGeometry => {
+const buildParticleGeometry = (count: number, journeyCount: number): BufferGeometry => {
   const geometry = new BufferGeometry()
-  const hero = new Float32Array(count * 3)
+  const hero = generateHeroCloud(count)
   const about = new Float32Array(count * 3)
   const program = new Float32Array(count * 3)
   const registration = new Float32Array(count * 3)
   const partners = new Float32Array(count * 3)
   const seeds = new Float32Array(count)
   const sizes = new Float32Array(count)
+  const journeyVisibility = new Float32Array(count)
 
   for (let index = 0; index < count; index += 1) {
-    const a = seeded(index, 1) * Math.PI * 2
     const b = seeded(index, 2)
-    const z = (seeded(index, 3) - 0.5) * 22
-    const radius = 2.2 + b * 7.5
-    hero.set([Math.cos(a) * radius, 1.2 + Math.sin(a) * radius * 0.52, z], index * 3)
 
-    const helix = index / count * Math.PI * 7
+    const helix = index / journeyCount * Math.PI * 7
     about.set([Math.cos(helix) * (2.2 + b * 2.4), 1.5 + Math.sin(helix) * (1.2 + b * 2.8), (seeded(index, 4) - 0.5) * 22], index * 3)
 
     const lane = index % 5
@@ -145,15 +144,21 @@ const buildParticleGeometry = (count: number): BufferGeometry => {
     partners.set([(column - (columns - 1) / 2) * 0.72, 1.2 + (row - 5.5) * 0.64, (Math.floor(index / (columns * 12)) - 3) * 1.35], index * 3)
     seeds[index] = seeded(index, 9)
     sizes[index] = 1.3 + seeded(index, 10) * 2.1
+    journeyVisibility[index] = index < journeyCount ? 1 : 0
   }
 
-  geometry.setAttribute('position', new BufferAttribute(hero, 3))
+  geometry.setAttribute('position', new BufferAttribute(hero.positions, 3))
   geometry.setAttribute('aAbout', new BufferAttribute(about, 3))
   geometry.setAttribute('aProgram', new BufferAttribute(program, 3))
   geometry.setAttribute('aRegistration', new BufferAttribute(registration, 3))
   geometry.setAttribute('aPartners', new BufferAttribute(partners, 3))
   geometry.setAttribute('aSeed', new BufferAttribute(seeds, 1))
   geometry.setAttribute('aSize', new BufferAttribute(sizes, 1))
+  geometry.setAttribute('aJourneyVisibility', new BufferAttribute(journeyVisibility, 1))
+  geometry.setAttribute('aHeroSize', new BufferAttribute(hero.sizes, 1))
+  geometry.setAttribute('aHeroAlpha', new BufferAttribute(hero.alphas, 1))
+  geometry.setAttribute('aHeroGlow', new BufferAttribute(hero.glow, 1))
+  geometry.setAttribute('aHeroDrift', new BufferAttribute(hero.drift, 1))
   return geometry
 }
 
@@ -253,6 +258,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     uniforms: {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
       uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
+      uHeroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
       uIntroNoise: { value: ROAD_INTRO.enabled && !runtime.reducedMotion ? 1 : 0 },
       uNoiseAmplitude: { value: ROAD_INTRO.particleNoiseAmplitude },
       uNoiseSpeed: { value: ROAD_INTRO.particleNoiseSpeed },
@@ -328,7 +334,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
     if (particles) { particles.parent?.remove(particles); particles.geometry.dispose() }
     particleCount = PARTICLE_COUNTS[quality]
-    particles = new Points(buildParticleGeometry(particleCount), particleMaterial)
+    particles = new Points(buildParticleGeometry(particleCount, JOURNEY_PARTICLE_COUNTS[quality]), particleMaterial)
     particles.frustumCulled = false
     scene.add(particles)
 
@@ -519,6 +525,11 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
       particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
       particleMaterial.uniforms.uVisibility!.value = particlesVisibility
+      particleMaterial.uniforms.uHeroReveal!.value = ROAD_INTRO.enabled
+        ? reducedMotion
+          ? elapsed >= 0.15 ? 1 : 0
+          : smoothstep(0.25, 2.4, elapsed)
+        : 1
       particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
       particleMaterial.uniforms.uIntroNoise!.value = reducedMotion
         ? 0
