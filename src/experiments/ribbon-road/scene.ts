@@ -30,6 +30,10 @@ import ribbonFragmentShader from './shaders/ribbon.frag.glsl?raw'
 import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import { generateHeroCloud } from './heroCloud'
+import { generateNavigationFigures, NAV_LAYOUT_SCALE_X, NAV_LAYOUT_SCALE_Y } from './navFigures'
+import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
+import type { RoadSectionId } from './navigation'
+import { roadPointValuesAt } from './roadPaths'
 import {
   BALL_RADIUS,
   BALL_SURFACE_GAP,
@@ -88,18 +92,6 @@ const smoothstep = (a: number, b: number, value: number): number => {
   return x * x * (3 - 2 * x)
 }
 
-const sectionAt = (progress: number): RoadSection => {
-  for (const [name, range] of Object.entries(ROAD_SECTIONS) as [RoadSection, readonly [number, number]][]) {
-    if (progress >= range[0] && progress < range[1]) return name
-  }
-  return 'partners'
-}
-
-const particleStateAt = (progress: number): string => {
-  const section = sectionAt(progress)
-  return section === 'speakers' ? 'hidden' : section
-}
-
 const particleMorphAt = (progress: number): number => {
   if (progress < 0.16) return smoothstep(0.08, 0.18, progress)
   if (progress < 0.36) return 1 + smoothstep(0.27, 0.38, progress)
@@ -116,6 +108,7 @@ const seeded = (index: number, salt: number): number => {
 const buildParticleGeometry = (count: number, journeyCount: number): BufferGeometry => {
   const geometry = new BufferGeometry()
   const hero = generateHeroCloud(count)
+  const navigation = generateNavigationFigures(count)
   const about = new Float32Array(count * 3)
   const program = new Float32Array(count * 3)
   const registration = new Float32Array(count * 3)
@@ -159,13 +152,17 @@ const buildParticleGeometry = (count: number, journeyCount: number): BufferGeome
   geometry.setAttribute('aHeroAlpha', new BufferAttribute(hero.alphas, 1))
   geometry.setAttribute('aHeroGlow', new BufferAttribute(hero.glow, 1))
   geometry.setAttribute('aHeroDrift', new BufferAttribute(hero.drift, 1))
+  geometry.setAttribute('aNavTarget', new BufferAttribute(navigation.targets, 3))
+  geometry.setAttribute('aNavData', new BufferAttribute(navigation.data, 3))
   return geometry
 }
 
 export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const { scene, camera, renderer, container } = runtime
-  const curve = createRoadCurve()
+  let curve = createRoadCurve(roadPointValuesAt(0))
+  let activeRoadIndex = 0
   const state = { scroll: 0, hover: 0, pulse: 0 }
+  const hoverWeights = new Float32Array(ROAD_NAV_SECTIONS.length)
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches
   const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
   const shaderPointer = new Vector2()
@@ -259,6 +256,17 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
       uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
       uHeroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
+      uNavFormation: { value: 0 },
+      uNavHover0: { value: 0 }, uNavHover1: { value: 0 }, uNavHover2: { value: 0 },
+      uNavHover3: { value: 0 }, uNavHover4: { value: 0 },
+      uNavHoverScale: { value: runtime.reducedMotion ? 1 : NAV_CONSTELLATION.hoverScale },
+      uNavHoverBrightness: { value: NAV_CONSTELLATION.hoverBrightness },
+      uNavSelectedFigure: { value: -1 },
+      uNavSelectedBrightness: { value: NAV_CONSTELLATION.selectedBrightness },
+      uNavCheckerColumns: { value: NAV_CONSTELLATION.checkerColumns },
+      uNavCheckerStepX: { value: NAV_CONSTELLATION.checkerStepX * NAV_LAYOUT_SCALE_X },
+      uNavCheckerStepY: { value: NAV_CONSTELLATION.checkerStepY * NAV_LAYOUT_SCALE_Y },
+      uNavMobile: { value: window.innerWidth <= 820 ? 1 : 0 },
       uIntroNoise: { value: ROAD_INTRO.enabled && !runtime.reducedMotion ? 1 : 0 },
       uNoiseAmplitude: { value: ROAD_INTRO.particleNoiseAmplitude },
       uNoiseSpeed: { value: ROAD_INTRO.particleNoiseSpeed },
@@ -355,6 +363,32 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   }
   buildQuality(runtime.quality)
 
+  const activateRoad = (roadIndex: number): void => {
+    activeRoadIndex = roadIndex
+    curve = createRoadCurve(roadPointValuesAt(roadIndex))
+    if (ribbon) {
+      ribbon.geometry.dispose()
+      ribbon.geometry = createRibbonGeometry(
+        curve,
+        RIBBON_STEPS[activeQuality],
+        ROAD_APPEARANCE.width,
+        ROAD_APPEARANCE.thickness,
+      )
+    }
+    getRoadFrame(curve, PORTAL_PROGRESS, portalTangent, portalNormal, portalRight)
+    portal.position.copy(curve.getPointAt(PORTAL_PROGRESS)).addScaledVector(
+      portalNormal,
+      ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
+    )
+    getRoadFrame(curve, ballProgress, tangent, normal, right)
+    point.copy(curve.getPointAt(ballProgress)).addScaledVector(
+      normal,
+      ROAD_APPEARANCE.thickness / 2 + BALL_APPEARANCE.radius + BALL_SURFACE_GAP,
+    )
+    ball?.position.copy(point)
+    ballPrevious.copy(point)
+  }
+
   const scrollTween = gsap.to(state, {
     scroll: 1,
     ease: 'none',
@@ -362,10 +396,42 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   })
   let hoverTween: gsap.core.Tween | undefined
   let pulseTween: gsap.core.Tween | undefined
+  let hoveredFigure = -1
+  let selectedFigure = -1
+  let lastElapsed = 0
+  let revealStartedAt = 0
+  let formationStartedAt = -1
+  let formationProgress = 0
+  let revealCompleteSent = false
+  let figuresReadySent = false
+  let orderedSectionIds: RoadSectionId[] = ROAD_NAV_SECTIONS.map(({ id }) => id)
   const onNavFocus = (event: Event): void => {
-    const active = (event as CustomEvent<number>).detail >= 0
+    hoveredFigure = (event as CustomEvent<number>).detail
+    const active = hoveredFigure >= 0
     hoverTween?.kill()
     hoverTween = gsap.to(state, { hover: active ? 1 : 0, duration: 0.45, ease: 'sine.out' })
+  }
+  const onNavSelect = (event: Event): void => {
+    const detail = (event as CustomEvent<{ figureIndex: number; roadIndex?: number }>).detail
+    selectedFigure = detail.figureIndex
+    activateRoad(detail.roadIndex ?? selectedFigure)
+  }
+  const onRoadOrderChange = (event: Event): void => {
+    const nextOrder = (event as CustomEvent<{ orderedSectionIds?: RoadSectionId[] }>).detail?.orderedSectionIds
+    if (Array.isArray(nextOrder) && nextOrder.length) orderedSectionIds = [...nextOrder]
+  }
+  const onRoadReset = (): void => {
+    revealStartedAt = lastElapsed
+    formationStartedAt = -1
+    formationProgress = 0
+    revealCompleteSent = false
+    figuresReadySent = false
+    hoveredFigure = -1
+    selectedFigure = -1
+    activateRoad(0)
+    hoverWeights.fill(0)
+    particleMaterial.uniforms.uNavFormation!.value = 0
+    particleMaterial.uniforms.uHeroReveal!.value = 0
   }
   const onComplete = (): void => {
     pulseTween?.kill()
@@ -381,6 +447,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   }
   window.addEventListener('pointermove', onPointerMove, { passive: true })
   container.addEventListener('roadnavfocus', onNavFocus)
+  container.addEventListener('roadnavselect', onNavSelect)
+  container.addEventListener('roadorderchange', onRoadOrderChange)
+  container.addEventListener('roadreset', onRoadReset)
   container.addEventListener('roadcomplete', onComplete)
 
   let introProgress = ROAD_INTRO.enabled ? 0 : 1
@@ -397,9 +466,20 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (reducedMotion) return window.scrollY >= start ? 1 : 0
     return smoothstep(start, Math.max(start + 1, end), window.scrollY)
   }
+  const visibleDomSection = (): RoadSection | 'hero' => {
+    const probeY = window.scrollY + window.innerHeight * 0.38
+    if (probeY < window.innerHeight) return 'hero'
+    let active: RoadSectionId = orderedSectionIds[0] ?? 'road-about'
+    for (const sectionId of orderedSectionIds) {
+      const element = document.getElementById(sectionId)
+      if (element && probeY >= element.offsetTop) active = sectionId
+    }
+    return active.replace('road-', '') as RoadSection
+  }
 
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
+      lastElapsed = elapsed
       if (ROAD_APPEARANCE.width !== lastRoadWidth || ROAD_APPEARANCE.thickness !== lastRoadThickness) {
         if (ribbon) {
           ribbon.geometry.dispose()
@@ -522,17 +602,45 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       camera.updateMatrixWorld()
 
       const particlesVisibility = 1 - purplePhase
-      particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
-      particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
-      particleMaterial.uniforms.uVisibility!.value = particlesVisibility
-      particleMaterial.uniforms.uHeroReveal!.value = ROAD_INTRO.enabled
+      const revealProgress = ROAD_INTRO.enabled
         ? reducedMotion
-          ? elapsed >= 0.15 ? 1 : 0
+          ? elapsed - revealStartedAt >= 0.15 ? 1 : 0
           : clamp01(
-            (elapsed - ROAD_INTRO.particleRevealDelay)
+            (elapsed - revealStartedAt - ROAD_INTRO.particleRevealDelay)
             / Math.max(0.01, ROAD_INTRO.particleRevealDuration),
           )
         : 1
+      if (revealProgress >= 1 && !revealCompleteSent) {
+        revealCompleteSent = true
+        formationStartedAt = elapsed + (reducedMotion ? 0 : NAV_CONSTELLATION.formationDelay)
+        container.dispatchEvent(new CustomEvent('roadherorevealcomplete'))
+      }
+      formationProgress = formationStartedAt < 0
+        ? 0
+        : reducedMotion
+          ? 1
+          : clamp01((elapsed - formationStartedAt) / Math.max(0.01, NAV_CONSTELLATION.formationDuration))
+      if (formationProgress >= 1 && !figuresReadySent) {
+        figuresReadySent = true
+        container.dispatchEvent(new CustomEvent('roadfiguresready'))
+      }
+      const hoverBlend = 1 - Math.exp(-NAV_CONSTELLATION.hoverResponse * Math.min(delta, 0.05))
+      for (let index = 0; index < hoverWeights.length; index += 1) {
+        const target = index === hoveredFigure || index === selectedFigure ? 1 : 0
+        const current = hoverWeights[index] ?? 0
+        hoverWeights[index] = current + (target - current) * hoverBlend
+      }
+      particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
+      particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
+      particleMaterial.uniforms.uVisibility!.value = particlesVisibility
+      particleMaterial.uniforms.uHeroReveal!.value = revealProgress
+      particleMaterial.uniforms.uNavFormation!.value = formationProgress
+      particleMaterial.uniforms.uNavHover0!.value = hoverWeights[0]
+      particleMaterial.uniforms.uNavHover1!.value = hoverWeights[1]
+      particleMaterial.uniforms.uNavHover2!.value = hoverWeights[2]
+      particleMaterial.uniforms.uNavHover3!.value = hoverWeights[3]
+      particleMaterial.uniforms.uNavHover4!.value = hoverWeights[4]
+      particleMaterial.uniforms.uNavSelectedFigure!.value = selectedFigure
       particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
       particleMaterial.uniforms.uIntroNoise!.value = reducedMotion
         ? 0
@@ -656,30 +764,43 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     resize: (width, height) => {
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
       particleMaterial.uniforms.uViewport!.value.set(width, height)
+      particleMaterial.uniforms.uNavMobile!.value = width <= 820 ? 1 : 0
     },
     setQuality: (quality, profile) => {
       buildQuality(quality)
       particleMaterial.uniforms.uPixelRatio!.value = Math.min(devicePixelRatio, profile.dpr)
     },
     reset: () => window.scrollTo({ top: 0, behavior: runtime.reducedMotion ? 'auto' : 'smooth' }),
-    stats: () => ({
-      particles: particleCount,
-      scrollProgress: state.scroll,
-      transitionProgress: introProgress,
-      section: sectionAt(state.scroll),
-      ribbonProgress: state.scroll,
-      particleState: particleStateAt(state.scroll),
-      particlesVisible: purplePhase < 0.05,
-      purplePhase: purplePhase > 0.5,
-      ballProgress,
-      ballVelocity,
-      ballPosition: `${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)}`,
-      ballLag: Math.max(0, journeyProgress(state.scroll) + 0.02 - ballProgress),
-      ballRotationSpeed: rotationSpeed,
-    }),
+    stats: () => {
+      const domSection = visibleDomSection()
+      return {
+        particles: particleCount,
+        scrollProgress: state.scroll,
+        transitionProgress: introProgress,
+        section: domSection,
+        ribbonProgress: state.scroll,
+        particleState: domSection === 'hero'
+          ? 'hero'
+          : domSection === 'speakers' ? 'hidden' : domSection,
+        particlesVisible: purplePhase < 0.05,
+        purplePhase: purplePhase > 0.5,
+        ballProgress,
+        ballVelocity,
+        ballPosition: `${point.x.toFixed(1)}, ${point.y.toFixed(1)}, ${point.z.toFixed(1)}`,
+        ballLag: Math.max(0, journeyProgress(state.scroll) + 0.02 - ballProgress),
+        ballRotationSpeed: rotationSpeed,
+        formationProgress,
+        hoveredFigure,
+        figureCount: Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length),
+        activeRoadIndex,
+      }
+    },
     dispose: () => {
       window.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('roadnavfocus', onNavFocus)
+      container.removeEventListener('roadnavselect', onNavSelect)
+      container.removeEventListener('roadorderchange', onRoadOrderChange)
+      container.removeEventListener('roadreset', onRoadReset)
       container.removeEventListener('roadcomplete', onComplete)
       hoverTween?.kill()
       pulseTween?.kill()

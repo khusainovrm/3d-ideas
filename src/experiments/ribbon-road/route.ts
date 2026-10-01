@@ -1,4 +1,5 @@
 import { BufferAttribute, BufferGeometry, CatmullRomCurve3, Vector3 } from 'three'
+import { roadPointValuesAt, type RoadPointValues } from './roadPaths'
 
 export type RibbonSplineType = 'centripetal' | 'catmullrom' | 'chordal'
 
@@ -100,28 +101,18 @@ export const ROAD_INTRO = {
 } as const
 
 
-export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
-  [-15.8, 9.5, 42.7], [-13.2, 9, 37.8], [-10.6, 8.5, 32.9], [-8, 8, 28], [-8.5, 8.3, 22.7],
-  [-7.5, 7, 18], [-6.6, 6.5, 13], [-4, 4, 9], [-2.2, 0.8, 4], [-3.3, -0.1, 0],
-  [1.1, -3.6, -3], [7.7, -3.5, -8], [7.8, -7.1, -12.1], [7.9, -10.7, -16.2], [4.7, -14.3, -20.3],
-  [6.6, -17.1, -24.7], [13.6, -19, -27.1], [10.2, -26.2, -32.4], [10.7, -29.8, -37.8], [8.4, -32.4, -40.8],
-  [7.7, -33.5, -45.7], [8.6, -39.6, -49],
-]
-// export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
-//   [-5.5, 8.5, 33], [-5, 8, 28], [-4.5, 7.5, 23],
-//   [-4, 7, 18], [-3.5, 6.5, 13], [-7.2, 6, 8], [-2.2, 0.8, 4], [-1, -0.1, 0],
-//   [0.5, -3.6, -4], [7.7, -3.5, -8], [7.8, -7.1, -12.1], [7.9, -10.7, -16.2], [4.7, -14.3, -20.3],
-//   [6.6, -17.1, -24.7], [13.6, -19, -27.1], [10.2, -26.2, -32.4], [10.7, -29.8, -37.8], [8.4, -32.4, -40.8],
-//   [7.7, -33.5, -45.7], [8.6, -39.6, -49],
-// ]
-
 const WORLD_UP = new Vector3(0, 1, 0)
 
 export const createRoadCurve = (
-  points: readonly Vector3[] = ROAD_POINT_VALUES.map((point) => new Vector3(...point)),
+  pointValues: RoadPointValues | readonly Vector3[] = roadPointValuesAt(0),
   tension = 0.5,
   curveType: RibbonSplineType = 'centripetal',
-): CatmullRomCurve3 => new CatmullRomCurve3([...points], false, curveType, tension)
+): CatmullRomCurve3 => new CatmullRomCurve3(
+  pointValues.map((point) => point instanceof Vector3 ? point.clone() : new Vector3(...point)),
+  false,
+  curveType,
+  tension,
+)
 
 export const getRoadFrame = (
   curve: CatmullRomCurve3,

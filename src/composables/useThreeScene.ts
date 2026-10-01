@@ -45,6 +45,14 @@ export const useThreeScene = (factory: SceneFactory) => {
     ballPosition: '0.0, 0.0, 0.0',
     ballLag: 0,
     ballRotationSpeed: 0,
+    formationProgress: 0,
+    hoveredFigure: -1,
+    figureCount: 0,
+    activeRoadIndex: 0,
+    navigationPhase: 'locked-intro',
+    selectedSection: '',
+    scrollLocked: true,
+    journeyFloorY: 0,
     nodeCount: 0,
     selectedNode: -1,
     editorMode: 'edit',
@@ -137,6 +145,10 @@ export const useThreeScene = (factory: SceneFactory) => {
     metrics.ballPosition = stats?.ballPosition ?? '0.0, 0.0, 0.0'
     metrics.ballLag = stats?.ballLag ?? 0
     metrics.ballRotationSpeed = stats?.ballRotationSpeed ?? 0
+    metrics.formationProgress = stats?.formationProgress ?? 0
+    metrics.hoveredFigure = stats?.hoveredFigure ?? -1
+    metrics.figureCount = stats?.figureCount ?? 0
+    metrics.activeRoadIndex = stats?.activeRoadIndex ?? 0
     metrics.nodeCount = stats?.nodeCount ?? 0
     metrics.selectedNode = stats?.selectedNode ?? -1
     metrics.editorMode = stats?.editorMode ?? 'edit'

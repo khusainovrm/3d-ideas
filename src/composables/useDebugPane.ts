@@ -32,6 +32,14 @@ export interface RuntimeMetrics {
   ballPosition: string
   ballLag: number
   ballRotationSpeed: number
+  formationProgress: number
+  hoveredFigure: number
+  figureCount: number
+  activeRoadIndex: number
+  navigationPhase: string
+  selectedSection: string
+  scrollLocked: boolean
+  journeyFloorY: number
   nodeCount: number
   selectedNode: number
   editorMode: string

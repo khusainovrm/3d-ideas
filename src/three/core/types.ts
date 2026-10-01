@@ -30,6 +30,10 @@ export interface SceneStats {
   ballPosition?: string
   ballLag?: number
   ballRotationSpeed?: number
+  formationProgress?: number
+  hoveredFigure?: number
+  figureCount?: number
+  activeRoadIndex?: number
   nodeCount?: number
   selectedNode?: number
   editorMode?: string

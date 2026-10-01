@@ -1,13 +1,19 @@
 <template>
-  <main ref="page" class="road">
+  <main ref="page" :class="['road', `road--${navigationPhase}`]">
     <div ref="container" class="road__canvas" aria-hidden="true"/>
     <div class="road__grain" aria-hidden="true"/>
 
     <nav class="road-nav" aria-label="Основная навигация">
       <RouterLink to="/">← Visual lab</RouterLink>
-      <a href="#road-top" class="road-nav__mark" @click.prevent="scrollTo('road-top')">O / 26</a>
-      <a href="#road-registration" class="road-nav__cta"
-         @click.prevent="scrollTo('road-registration')">Регистрация</a>
+      <button type="button" class="road-nav__mark" @click="scrollTo('road-top')">O / 26</button>
+      <button
+          type="button"
+          class="road-nav__cta"
+          :class="{'road-nav__cta--reset': navigationPhase === 'journey'}"
+          :disabled="navigationPhase === 'transitioning' || navigationPhase === 'resetting'"
+          :aria-label="navigationPhase === 'journey' ? 'Сбросить маршрут и вернуться к выбору секции' : 'Начать с раздела Регистрация'"
+          @click="navigationPhase === 'journey' ? resetJourney() : selectSection('road-registration')"
+      >{{ navigationPhase === 'journey' ? 'Сбросить' : 'Регистрация' }}</button>
     </nav>
 
     <div v-if="debug" ref="paneHost" class="road-debug"/>
@@ -23,19 +29,22 @@
         </p>
         <div class="road-actions">
           <a class="road-button road-button--primary" href="#road-registration"
-             @click.prevent="scrollTo('road-registration')">Зарегистрироваться <span>↗</span></a>
-          <a class="road-button" href="#road-about" @click.prevent="scrollTo('road-about')">Узнать
+             @click.prevent="selectSection('road-registration')">Зарегистрироваться <span>↗</span></a>
+          <a class="road-button" href="#road-about" @click.prevent="selectSection('road-about')">Узнать
             подробнее</a>
         </div>
       </div>
 
       <div class="road-orbits" aria-label="Быстрая навигация">
         <button
-            v-for="(link, index) in heroLinks"
+            v-for="(link, index) in visibleHeroLinks"
             :key="link.target"
             type="button"
-            :class="['road-orbit', link.className]"
-            @click="scrollTo(link.target)"
+            :class="['road-orbit', link.className, {'road-orbit--ready': figuresReady}]"
+            :disabled="!figuresReady || !['awaiting-selection', 'journey'].includes(navigationPhase)"
+            :aria-hidden="!figuresReady"
+            :aria-label="`Начать с раздела ${link.label}`"
+            @click="selectSection(link.target)"
             @mouseenter="focusNav(index)"
             @mouseleave="focusNav(-1)"
             @focus="focusNav(index)"
@@ -45,7 +54,7 @@
       <p class="road-hero__hint">Выберите точку маршрута <b>↓</b></p>
     </section>
 
-    <section id="road-about" class="road-section road-about">
+    <section id="road-about" class="road-section road-about" :style="{order: sectionOrder('road-about')}">
       <header class="road-heading road-reveal">
         <p class="road-index">01 / О конференции</p>
         <h2>Двигаться<br/>в неизвестное</h2>
@@ -72,7 +81,7 @@
       </dl>
     </section>
 
-    <section id="road-program" class="road-section road-program">
+    <section id="road-program" class="road-section road-program" :style="{order: sectionOrder('road-program')}">
       <header class="road-heading road-reveal">
         <p class="road-index">02 / Ключевые темы</p>
         <h2>Программа</h2>
@@ -88,7 +97,7 @@
       </div>
     </section>
 
-    <section id="road-speakers" class="road-section road-speakers">
+    <section id="road-speakers" class="road-section road-speakers" :style="{order: sectionOrder('road-speakers')}">
       <header class="road-heading road-heading--speakers road-reveal">
         <p class="road-index">03 / Фиолетовая зона</p>
         <h2>Спикеры</h2>
@@ -107,7 +116,7 @@
       </div>
     </section>
 
-    <section id="road-registration" class="road-section road-registration">
+    <section id="road-registration" class="road-section road-registration" :style="{order: sectionOrder('road-registration')}">
       <div class="road-registration__intro road-reveal">
         <p class="road-index">04 / Точка назначения</p>
         <h2>Присоединяйтесь<br/>к конференции</h2>
@@ -137,7 +146,7 @@
       </div>
     </section>
 
-    <section id="road-partners" class="road-section road-partners">
+    <section id="road-partners" class="road-section road-partners" :style="{order: sectionOrder('road-partners')}">
       <div class="road-partners__content road-reveal">
         <p class="road-index">05 / Вместе в пути</p>
         <h2>Партнёры</h2>
@@ -158,11 +167,13 @@
 <script setup lang="ts">
 import gsap from 'gsap'
 import {ScrollTrigger} from 'gsap/ScrollTrigger'
-import {onMounted, onUnmounted, ref} from 'vue'
+import {computed, nextTick, onMounted, onUnmounted, ref, watch} from 'vue'
 import {useThreeScene} from '../../composables/useThreeScene'
 import {useDebugPane} from '../../composables/useDebugPane'
 import {createRibbonRoadScene} from './scene'
 import {BALL_APPEARANCE, PARTICLE_CONNECTIONS, RIBBON_ROAD_FEATURES, ROAD_APPEARANCE} from './route'
+import {NAV_CONSTELLATION, ORIGINAL_SECTION_ORDER, ROAD_NAV_SECTIONS, type RoadSectionId} from './navigation'
+import {createScrollGate} from './useScrollGate'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -219,17 +230,31 @@ const topics = [
 ] as const
 
 const partners = ['ROSTELECOM', 'NORTH / AI', 'ARC SYSTEMS', 'TIDE', 'COMMON ERA', 'SIGNAL', 'PARALLEL', 'FIELD OFFICE'] as const
-const heroLinks = [
-  {label: 'О конференции', target: 'road-about', className: 'road-orbit--about'},
-  {label: 'Программа', target: 'road-program', className: 'road-orbit--program'},
-  {label: 'Спикеры', target: 'road-speakers', className: 'road-orbit--speakers'},
-  {label: 'Регистрация', target: 'road-registration', className: 'road-orbit--registration'},
-  {label: 'Партнёры', target: 'road-partners', className: 'road-orbit--partners'},
-] as const
+const heroLinks = ROAD_NAV_SECTIONS.map(({id: target, label, className}) => ({target, label, className}))
+const visibleHeroLinks = heroLinks.slice(
+  0,
+  Math.max(1, Math.min(NAV_CONSTELLATION.figureCount, heroLinks.length)),
+)
+
+type NavigationPhase =
+  | 'locked-intro'
+  | 'forming-figures'
+  | 'awaiting-selection'
+  | 'transitioning'
+  | 'journey'
+  | 'resetting'
 
 const page = ref<HTMLElement | null>(null)
 const submitted = ref(false)
+const navigationPhase = ref<NavigationPhase>('locked-intro')
+const selectedSection = ref<RoadSectionId | null>(null)
+const figuresReady = ref(false)
+const journeyFloorY = ref(0)
 const {container, ready, error, metrics} = useThreeScene(createRibbonRoadScene)
+const orderedSections = computed<readonly RoadSectionId[]>(() => selectedSection.value
+  ? [selectedSection.value, ...ORIGINAL_SECTION_ORDER.filter((id) => id !== selectedSection.value)]
+  : ORIGINAL_SECTION_ORDER)
+const sectionOrder = (id: RoadSectionId): number => orderedSections.value.indexOf(id) + 1
 const {debug, paneHost} = useDebugPane(metrics, {
   title: 'Ribbon Road runtime',
   bindings: [
@@ -247,6 +272,14 @@ const {debug, paneHost} = useDebugPane(metrics, {
     {key: 'ballProgress', label: 'Ball Progress'}, {key: 'ballVelocity', label: 'Ball Velocity'},
     {key: 'ballPosition', label: 'Ball Position'}, {key: 'ballLag', label: 'Ball Lag'},
     {key: 'ballRotationSpeed', label: 'Ball Rotation Speed'},
+    {key: 'navigationPhase', label: 'Navigation Phase'},
+    {key: 'selectedSection', label: 'Selected Section'},
+    {key: 'scrollLocked', label: 'Scroll Locked'},
+    {key: 'journeyFloorY', label: 'Journey Floor'},
+    {key: 'formationProgress', label: 'Formation Progress'},
+    {key: 'hoveredFigure', label: 'Hovered Figure'},
+    {key: 'figureCount', label: 'Figure Count'},
+    {key: 'activeRoadIndex', label: 'Active Road'},
   ],
   setup: (pane) => {
     const features = pane.addFolder({title: 'Feature toggles', expanded: false})
@@ -282,16 +315,147 @@ const {debug, paneHost} = useDebugPane(metrics, {
 defineExpose({container, paneHost})
 
 let animationContext: gsap.Context | undefined
+const scrollGate = createScrollGate()
+const reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+let fallbackTimer = 0
+let scrollFrame = 0
+let scrollResolve: (() => void) | undefined
+let journeyResizeFrame = 0
+let focusFigureAfterReset = false
+let previousScrollRestoration: ScrollRestoration = 'auto'
+let cleanupSceneEvents = (): void => {}
+
+const syncNavigationMetrics = (): void => {
+  metrics.navigationPhase = navigationPhase.value
+  metrics.selectedSection = selectedSection.value ?? ''
+  metrics.scrollLocked = scrollGate.locked
+  metrics.journeyFloorY = journeyFloorY.value
+}
+
+const armNavigationFallback = (): void => {
+  window.clearTimeout(fallbackTimer)
+  fallbackTimer = window.setTimeout(() => {
+    if (navigationPhase.value === 'locked-intro' || navigationPhase.value === 'forming-figures') {
+      figuresReady.value = true
+      navigationPhase.value = 'awaiting-selection'
+      syncNavigationMetrics()
+      if (focusFigureAfterReset) {
+        focusFigureAfterReset = false
+        void nextTick(() => page.value?.querySelector<HTMLButtonElement>('.road-orbit:not(:disabled)')?.focus())
+      }
+    }
+  }, 9000)
+}
+
+const cancelScrollAnimation = (): void => {
+  cancelAnimationFrame(scrollFrame)
+  scrollFrame = 0
+  scrollResolve?.()
+  scrollResolve = undefined
+}
+
+const animateScrollTo = (targetY: number, duration: number): Promise<void> => {
+  cancelScrollAnimation()
+  if (reducedMotionQuery.matches || duration <= 0) {
+    window.scrollTo(0, targetY)
+    return Promise.resolve()
+  }
+  const startY = window.scrollY
+  const distance = targetY - startY
+  const startedAt = performance.now()
+  return new Promise((resolve) => {
+    scrollResolve = resolve
+    const tick = (now: number): void => {
+      const progress = Math.min(1, (now - startedAt) / (duration * 1000))
+      const eased = progress < 0.5
+        ? 4 * progress * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 3) / 2
+      window.scrollTo(0, startY + distance * eased)
+      if (progress < 1) {
+        scrollFrame = requestAnimationFrame(tick)
+      } else {
+        scrollFrame = 0
+        scrollResolve = undefined
+        resolve()
+      }
+    }
+    scrollFrame = requestAnimationFrame(tick)
+  })
+}
+
+const refreshOrderedLayout = async (): Promise<void> => {
+  await nextTick()
+  await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  ScrollTrigger.refresh()
+  container.value?.dispatchEvent(new CustomEvent('roadorderchange', {
+    detail: {orderedSectionIds: [...orderedSections.value]},
+  }))
+}
 
 const scrollTo = (target: string): void => {
-  document.getElementById(target)?.scrollIntoView({
-    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
-    block: 'start',
-  })
+  const element = document.getElementById(target)
+  if (!element) return
+  const targetY = element.offsetTop
+  void animateScrollTo(targetY, NAV_CONSTELLATION.scrollDuration)
 }
 
 const focusNav = (index: number): void => {
   container.value?.dispatchEvent(new CustomEvent<number>('roadnavfocus', {detail: index}))
+}
+
+const selectSection = async (target: RoadSectionId): Promise<void> => {
+  if (navigationPhase.value !== 'awaiting-selection' && navigationPhase.value !== 'journey') return
+  const figureIndex = ROAD_NAV_SECTIONS.findIndex(({id}) => id === target)
+  if (figureIndex < 0 || figureIndex >= NAV_CONSTELLATION.figureCount) return
+  const roadIndex = ROAD_NAV_SECTIONS[figureIndex]?.roadIndex ?? figureIndex
+  navigationPhase.value = 'transitioning'
+  selectedSection.value = target
+  container.value?.dispatchEvent(new CustomEvent('roadnavselect', {
+    detail: {figureIndex, roadIndex, sectionId: target},
+  }))
+  syncNavigationMetrics()
+  await refreshOrderedLayout()
+  scrollGate.unlock()
+  syncNavigationMetrics()
+  const element = document.getElementById(target)
+  if (!element) {
+    navigationPhase.value = 'awaiting-selection'
+    figuresReady.value = true
+    scrollGate.lock(0)
+    syncNavigationMetrics()
+    return
+  }
+  await animateScrollTo(element.offsetTop, NAV_CONSTELLATION.scrollDuration)
+  journeyFloorY.value = 0
+  navigationPhase.value = 'journey'
+  history.replaceState(history.state, '', `#${target}`)
+  syncNavigationMetrics()
+  const heading = element.querySelector<HTMLElement>('h1, h2, h3')
+  if (heading) {
+    heading.tabIndex = -1
+    heading.focus({preventScroll: true})
+  }
+}
+
+const resetJourney = async (): Promise<void> => {
+  if (navigationPhase.value !== 'journey') return
+  navigationPhase.value = 'resetting'
+  focusFigureAfterReset = true
+  journeyFloorY.value = 0
+  figuresReady.value = false
+  selectedSection.value = null
+  focusNav(-1)
+  syncNavigationMetrics()
+  cancelScrollAnimation()
+  await refreshOrderedLayout()
+  await animateScrollTo(0, NAV_CONSTELLATION.scrollDuration)
+  window.scrollTo(0, 0)
+  scrollGate.lock(0)
+  container.value?.dispatchEvent(new CustomEvent('roadreset'))
+  history.replaceState(history.state, '', `${location.pathname}${location.search}`)
+  navigationPhase.value = 'locked-intro'
+  syncNavigationMetrics()
+  armNavigationFallback()
 }
 
 const submitRegistration = (): void => {
@@ -301,8 +465,35 @@ const submitRegistration = (): void => {
 
 onMounted(() => {
   document.documentElement.classList.add('road-page-active')
+  previousScrollRestoration = history.scrollRestoration
+  history.scrollRestoration = 'manual'
+  window.scrollTo(0, 0)
+  scrollGate.lock(0)
+  syncNavigationMetrics()
+  const onHeroRevealComplete = (): void => {
+    if (navigationPhase.value !== 'locked-intro') return
+    navigationPhase.value = 'forming-figures'
+    syncNavigationMetrics()
+  }
+  const onFiguresReady = (): void => {
+    if (navigationPhase.value !== 'forming-figures' && navigationPhase.value !== 'locked-intro') return
+    figuresReady.value = true
+    navigationPhase.value = 'awaiting-selection'
+    syncNavigationMetrics()
+    if (focusFigureAfterReset) {
+      focusFigureAfterReset = false
+      void nextTick(() => page.value?.querySelector<HTMLButtonElement>('.road-orbit:not(:disabled)')?.focus())
+    }
+  }
+  container.value?.addEventListener('roadherorevealcomplete', onHeroRevealComplete)
+  container.value?.addEventListener('roadfiguresready', onFiguresReady)
+  armNavigationFallback()
+  cleanupSceneEvents = (): void => {
+    container.value?.removeEventListener('roadherorevealcomplete', onHeroRevealComplete)
+    container.value?.removeEventListener('roadfiguresready', onFiguresReady)
+  }
   if (!page.value) return
-  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  const reducedMotion = reducedMotionQuery.matches
   animationContext = gsap.context(() => {
     if (reducedMotion) return
     page.value?.querySelectorAll<HTMLElement>('.road-reveal').forEach((element) => {
@@ -321,8 +512,59 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  cleanupSceneEvents()
+  window.clearTimeout(fallbackTimer)
+  cancelScrollAnimation()
+  cancelAnimationFrame(journeyResizeFrame)
+  scrollGate.dispose()
+  window.removeEventListener('wheel', onJourneyWheel)
+  window.removeEventListener('touchmove', onJourneyTouchMove)
+  window.removeEventListener('keydown', onJourneyKey)
+  window.removeEventListener('resize', refreshJourneyFloor)
+  history.scrollRestoration = previousScrollRestoration
   document.documentElement.classList.remove('road-page-active')
   animationContext?.revert()
+})
+
+const onJourneyWheel = (event: WheelEvent): void => {
+  if (navigationPhase.value === 'transitioning' || navigationPhase.value === 'resetting') {
+    event.preventDefault()
+    return
+  }
+}
+const onJourneyTouchMove = (event: TouchEvent): void => {
+  if (navigationPhase.value === 'transitioning' || navigationPhase.value === 'resetting') {
+    event.preventDefault()
+    return
+  }
+}
+const onJourneyKey = (event: KeyboardEvent): void => {
+  if ((navigationPhase.value === 'transitioning' || navigationPhase.value === 'resetting')
+    && ['ArrowUp', 'ArrowDown', 'PageUp', 'PageDown', 'Home', 'End', ' '].includes(event.key)) {
+    event.preventDefault()
+    return
+  }
+}
+
+const refreshJourneyFloor = (): void => {
+  cancelAnimationFrame(journeyResizeFrame)
+  journeyResizeFrame = requestAnimationFrame(() => {
+    ScrollTrigger.refresh()
+    journeyFloorY.value = 0
+    metrics.journeyFloorY = 0
+  })
+}
+
+window.addEventListener('wheel', onJourneyWheel, {passive: false})
+window.addEventListener('touchmove', onJourneyTouchMove, {passive: false})
+window.addEventListener('keydown', onJourneyKey)
+window.addEventListener('resize', refreshJourneyFloor, {passive: true})
+
+watch(error, (value) => {
+  if (!value || navigationPhase.value === 'journey') return
+  figuresReady.value = true
+  navigationPhase.value = 'awaiting-selection'
+  syncNavigationMetrics()
 })
 </script>
 
@@ -335,6 +577,8 @@ onUnmounted(() => {
   --orange: #ff6a13;
   --violet: #8b78ff;
   position: relative;
+  display: flex;
+  flex-direction: column;
   isolation: isolate;
   width: 100%;
   max-width: 100%;
@@ -389,9 +633,24 @@ onUnmounted(() => {
   text-transform: uppercase;
 }
 
-.road-nav a {
+.road-nav a, .road-nav button {
   color: inherit;
   text-decoration: none;
+}
+
+.road-nav button {
+  padding: 0;
+  background: none;
+  border: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+
+.road-nav button:disabled {
+  cursor: default;
+  opacity: .45;
 }
 
 .road-nav__mark {
@@ -403,6 +662,11 @@ onUnmounted(() => {
   padding-bottom: 5px;
   color: var(--orange) !important;
   border-bottom: 1px solid currentColor;
+}
+
+.road-nav__cta--reset {
+  color: #ff8a43 !important;
+  text-shadow: 0 0 12px rgba(255, 106, 19, .72);
 }
 
 .road-debug {
@@ -435,6 +699,10 @@ onUnmounted(() => {
   position: relative;
   z-index: 2;
   padding: clamp(96px, 11vw, 170px) clamp(22px, 6vw, 96px);
+}
+
+.road-hero {
+  order: 0;
 }
 
 .road-kicker, .road-index {
@@ -573,6 +841,8 @@ onUnmounted(() => {
   align-items: center;
   gap: 9px;
   padding: 8px;
+  min-width: 44px;
+  min-height: 44px;
   color: rgba(237, 232, 224, .7);
   background: none;
   border: 0;
@@ -581,7 +851,18 @@ onUnmounted(() => {
   white-space: nowrap;
   cursor: pointer;
   pointer-events: auto;
-  transition: color .25s, transform .3s;
+  opacity: 0;
+  transform: scale(.82);
+  transition: color .25s, transform .3s, opacity .45s;
+}
+
+.road-orbit--ready {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.road-orbit:disabled {
+  pointer-events: none;
 }
 
 .road-orbit i {
@@ -605,28 +886,28 @@ onUnmounted(() => {
 }
 
 .road-orbit--about {
-  left: 4%;
-  top: 18%;
+  left: 15%;
+  top: 35%;
 }
 
 .road-orbit--program {
-  right: 11%;
-  top: 29%;
+  left: 32%;
+  top: 55%;
 }
 
 .road-orbit--speakers {
-  left: 25%;
-  top: 46%;
+  left: 49%;
+  top: 35%;
 }
 
 .road-orbit--registration {
-  right: 1%;
-  top: 61%;
+  left: 66%;
+  top: 55%;
 }
 
 .road-orbit--partners {
-  left: 10%;
-  top: 76%;
+  left: 83%;
+  top: 35%;
 }
 
 .road-hero__hint {
@@ -1041,27 +1322,27 @@ onUnmounted(() => {
 
   .road-orbit--about {
     left: 0;
-    top: 5%;
+    top: 4%;
   }
 
   .road-orbit--program {
-    right: 2%;
-    top: 22%;
+    left: 37%;
+    top: 25%;
   }
 
   .road-orbit--speakers {
-    left: 34%;
-    top: 42%;
+    left: 70%;
+    top: 4%;
   }
 
   .road-orbit--registration {
-    right: 4%;
-    top: 64%;
+    left: 17%;
+    top: 62%;
   }
 
   .road-orbit--partners {
-    left: 5%;
-    top: 78%;
+    left: 57%;
+    top: 77%;
   }
 
   .road-hero__hint {

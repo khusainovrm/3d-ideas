@@ -4,11 +4,11 @@ import {
   JOURNEY_END,
   JOURNEY_START,
   ROAD_INTRO,
-  ROAD_POINT_VALUES,
   ROAD_THICKNESS,
   ROAD_WIDTH,
   type RibbonSplineType,
 } from '../ribbon-road/route'
+import { roadPointValuesAt } from '../ribbon-road/roadPaths'
 
 export type EditorMode = 'edit' | 'preview'
 export type InspectorTab = 'nodes' | 'road' | 'ball' | 'intro' | 'camera' | 'preview' | 'export'
@@ -93,7 +93,7 @@ export interface ConstructorState {
   intro: IntroConfig
 }
 
-export const DEFAULT_POSITIONS = ROAD_POINT_VALUES
+export const DEFAULT_POSITIONS = roadPointValuesAt(0)
 
 export const DEFAULT_CAMERA: CameraConfig = {
   fov: 46,

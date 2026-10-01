@@ -257,7 +257,7 @@ const tupleRows = computed(() => state.nodes.map((node, index) => {
   return `[${formatCoordinate(p.x)}, ${formatCoordinate(p.y)}, ${formatCoordinate(p.z)}]${comma}`
 }))
 const tupleList = computed(() => groupedRows(tupleRows.value))
-const roadPointConfig = computed(() => `export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [\n${tupleList.value}\n]`)
+const coordinateArray = computed(() => `[\n${tupleList.value}\n]`)
 const vectorRows = computed(() => state.nodes.map((node, index) => {
   const p = node.position
   const comma = trailingComma.value || index < state.nodes.length - 1 ? ',' : ''
@@ -265,7 +265,7 @@ const vectorRows = computed(() => state.nodes.map((node, index) => {
 }))
 const vectorList = computed(() => groupedRows(vectorRows.value))
 const completeCurveCode = computed(() => `const makeCurve = (): CatmullRomCurve3 => new CatmullRomCurve3([\n${vectorList.value}\n], false, '${state.splineType}', ${state.tension.toFixed(2)})`)
-const exportPreview = computed(() => includeWrapper.value ? roadPointConfig.value : tupleList.value)
+const exportPreview = computed(() => includeWrapper.value ? coordinateArray.value : tupleList.value)
 const cameraCode = computed(() => `const CAMERA_CONFIG = ${JSON.stringify(state.camera, null, 2)}`)
 const introCode = computed(() => {
   const { previewPageViewportHeights: _previewOnly, ...intro } = state.intro
@@ -474,9 +474,9 @@ onUnmounted(() => {
         <label>Precision <select v-model.number="precision"><option :value="1">1 decimal</option><option :value="2">2 decimals</option><option :value="3">3 decimals</option></select></label>
         <label>Points per line <select v-model.number="pointsPerLine"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option><option :value="5">5</option></select></label>
         <label class="check"><input v-model="trailingComma" type="checkbox" /> Include trailing comma</label>
-        <label class="check"><input v-model="includeWrapper" type="checkbox" /> Include export declaration</label>
+        <label class="check"><input v-model="includeWrapper" type="checkbox" /> Include array brackets</label>
         <textarea class="code-preview" readonly :value="exportPreview" />
-        <button class="primary" @click="copy(roadPointConfig, 'ROAD_POINT_VALUES')">Copy ROAD_POINT_VALUES</button>
+        <button class="primary" @click="copy(coordinateArray, 'Coordinate array')">Copy coordinate array</button>
         <button @click="copy(tupleList, 'Tuple list')">Copy tuple list</button>
         <button @click="copy(completeCurveCode, 'makeCurve')">Copy complete makeCurve()</button>
         <button @click="copy(JSON.stringify(state.nodes.map(node => Object.values(node.position)), null, 2), 'JSON')">Copy JSON</button>
