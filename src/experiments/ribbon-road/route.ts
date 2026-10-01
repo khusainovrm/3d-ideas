@@ -6,7 +6,7 @@ export const ROAD_WIDTH = 1.825
 export const ROAD_THICKNESS = 0.23
 export const BALL_RADIUS = 0.46
 export const BALL_SURFACE_GAP = -0.01
-export const JOURNEY_START = 0.15
+export const JOURNEY_START = 0.05
 export const JOURNEY_END = 0.82
 
 /**
@@ -46,28 +46,44 @@ export const SIDE_CAMERA = {
   verticalPointerTravel: 0.65,
 } as const
 
-// export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
-//   [-4, 7, 18], [-3.5, 6.5, 13], [-3, 6, 8], [-2.2, 5.5, 4], [-1, 5, 0],
-//   [0.5, 4.5, -4], [1.8, 3.5, -8], [2.8, 2.5, -12], [3.2, 2, -16], [3, 1.5, -20],
-//   [2.3, 0.5, -24], [1.2, -0.5, -28], [0, -1, -32], [-1.2, -1.5, -36], [-2.2, -2.5, -40],
-//   [-3, -3.5, -44], [-3.2, -4, -48], [-3, -5, -52], [-2.3, -6, -56], [-1.2, -6.5, -60],
-//   [0, -7, -64], [1, -8, -68], [1.8, -9, -72], [2.3, -9.5, -76], [2.5, -10, -81],
-//   [2.2, -11, -86], [1.5, -11.5, -91], [0.7, -12.2, -96], [0, -13, -102],
-// ]
-// export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
-//   [-4, 7, 18], [-3.5, 6.5, 13], [-3, 6, 8], [-2.2, 5.5, 4], [-1, 5, 0],
-//   [0.5, 4.5, -4], [7.7, 3.5, -8], [5.7, 2.5, -12.1], [8, 3.5, -14.6], [3, -0.7, -20],
-//   [-2.2, 0.5, -24], [2.9, -0.5, -28], [3.8, -1, -32], [-1.2, -1.5, -36], [-2.2, -2.5, -40],
-//   [-3.6, -2.6, -44.7], [-3.2, -4, -48], [-1.2, -5, -52], [-2.3, -6, -56], [-1.2, -2.4, -60],
-//   [0, -7, -64], [1, -8, -68], [1.8, -9, -72], [2.3, -9.5, -76], [-2.2, -10, -81],
-//   [2.2, -11, -86], [1.5, -11.5, -91], [0.7, -12.2, -96], [0, -13, -102],
-// ]
+/** Intro before the regular road journey.
+ * The transition starts at the configured trigger and lasts
+ * `transitionViewportHeights`. Set `triggerSectionId` (for example,
+ * `road-about`) to use a DOM section, or leave it null to use viewport scroll.
+ */
+export const ROAD_INTRO = {
+  enabled: true,
+  triggerSectionId: null as string | null,
+  triggerViewportHeights: 1,
+  transitionViewportHeights: 0.45,
+  cameraLift: 11,
+  roadRevealStart: 0.18,
+  roadRevealEnd: 0.82,
+  ballEntryStart: 0.34,
+  ballEntryEnd: 0.96,
+  ballStartProgressOffset: 0.1,
+  ballArrivalProgress: JOURNEY_START + 0.02,
+  ballHandoffViewportHeights: 0.65,
+  particleDistance: 8,
+  particleRightOffset: 5.2,
+  particleVerticalOffset: 0.4,
+  particleIntroScale: 0.42,
+} as const
+
+
 export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
-  [-4, 7, 18], [-3.5, 6.5, 13], [-7.2, 6, 8], [-2.2, 0.8, 4], [-1, -0.1, 0],
-  [0.5, -3.6, -4], [7.7, -3.5, -8], [7.8, -7.1, -12.1], [7.9, -10.7, -16.2], [4.7, -14.3, -20.3],
-  [6.6, -17.1, -24.7], [13.6, -19, -27.1], [10.2, -26.2, -32.4], [10.7, -29.8, -37.8], [8.4, -32.4, -40.8],
-  [7.7, -33.5, -45.7], [8.6, -39.6, -49],
+  [-10.6, 8.5, 32.9], [-8, 8, 28], [-8.5, 8.3, 22.7], [-7.5, 7, 18], [-6.6, 6.5, 13],
+  [-4, 4, 9], [-2.2, 0.8, 4], [-3.3, -0.1, 0], [1.1, -3.6, -3], [7.7, -3.5, -8],
+  [7.8, -7.1, -12.1], [7.9, -10.7, -16.2], [4.7, -14.3, -20.3], [6.6, -17.1, -24.7], [13.6, -19, -27.1],
+  [10.2, -26.2, -32.4], [10.7, -29.8, -37.8], [8.4, -32.4, -40.8], [7.7, -33.5, -45.7], [8.6, -39.6, -49],
 ]
+// export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [
+//   [-5.5, 8.5, 33], [-5, 8, 28], [-4.5, 7.5, 23],
+//   [-4, 7, 18], [-3.5, 6.5, 13], [-7.2, 6, 8], [-2.2, 0.8, 4], [-1, -0.1, 0],
+//   [0.5, -3.6, -4], [7.7, -3.5, -8], [7.8, -7.1, -12.1], [7.9, -10.7, -16.2], [4.7, -14.3, -20.3],
+//   [6.6, -17.1, -24.7], [13.6, -19, -27.1], [10.2, -26.2, -32.4], [10.7, -29.8, -37.8], [8.4, -32.4, -40.8],
+//   [7.7, -33.5, -45.7], [8.6, -39.6, -49],
+// ]
 
 const WORLD_UP = new Vector3(0, 1, 0)
 

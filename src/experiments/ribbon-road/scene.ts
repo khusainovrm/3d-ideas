@@ -32,6 +32,7 @@ import {
   JOURNEY_START,
   ROAD_THICKNESS,
   ROAD_VISIBILITY,
+  ROAD_INTRO,
   PURPLE_PORTAL,
   RIBBON_ROAD_FEATURES,
   SIDE_CAMERA,
@@ -159,12 +160,22 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const particleMatrix = new Matrix4()
   const particleRight = new Vector3()
   const particleAnchor = new Vector3()
+  const particleQuaternion = new Quaternion()
+  const introParticlePosition = new Vector3()
+  const introParticleQuaternion = new Quaternion()
+  const introForward = new Vector3()
+  const introRight = new Vector3()
+  const introUp = new Vector3()
+  const journeyCameraPosition = new Vector3()
+  const journeyLookAt = new Vector3()
+  const introCameraPosition = new Vector3()
+  const introLookAt = new Vector3()
   const portalDelta = new Vector3()
   const portalTangent = new Vector3()
   const portalNormal = new Vector3()
   const portalRight = new Vector3()
   getRoadFrame(curve, PORTAL_PROGRESS, portalTangent, portalNormal, portalRight)
-  let ballProgress = JOURNEY_START + 0.02
+  let ballProgress = Math.max(0, JOURNEY_START - ROAD_INTRO.ballStartProgressOffset)
   let ballVelocity = 0
   let rotationSpeed = 0
   let purplePhase = 0
@@ -197,6 +208,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       uFadeStart: { value: ROAD_VISIBILITY.visibleDistance },
       uFadeEnd: { value: ROAD_VISIBILITY.visibleDistance + ROAD_VISIBILITY.fadeSoftness },
       uFadeStrength: { value: ROAD_VISIBILITY.strength },
+      uIntroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
     },
     side: FrontSide,
     transparent: true,
@@ -233,6 +245,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (ribbon) { scene.remove(ribbon); ribbon.geometry.dispose() }
     ribbon = new Mesh(createRibbonGeometry(curve, RIBBON_STEPS[quality]), ribbonMaterial)
     ribbon.frustumCulled = false
+    ribbon.visible = !ROAD_INTRO.enabled
     scene.add(ribbon)
 
     if (particles) { particles.parent?.remove(particles); particles.geometry.dispose() }
@@ -251,6 +264,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     getRoadFrame(curve, ballProgress, tangent, normal, right)
     ball.position.copy(curve.getPointAt(ballProgress)).addScaledVector(normal, ROAD_THICKNESS / 2 + BALL_RADIUS + BALL_SURFACE_GAP)
     ballPrevious.copy(ball.position)
+    ball.visible = !ROAD_INTRO.enabled
     scene.add(ball)
   }
   buildQuality(runtime.quality)
@@ -281,12 +295,37 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   container.addEventListener('roadnavfocus', onNavFocus)
   container.addEventListener('roadcomplete', onComplete)
 
+  let introProgress = ROAD_INTRO.enabled ? 0 : 1
+  let introEndScroll = 0
+  const introProgressAt = (reducedMotion: boolean): number => {
+    if (!ROAD_INTRO.enabled) { introEndScroll = 0; return 1 }
+    const viewportHeight = Math.max(1, window.innerHeight)
+    const section = ROAD_INTRO.triggerSectionId ? document.getElementById(ROAD_INTRO.triggerSectionId) : null
+    const start = section
+      ? section.getBoundingClientRect().top + window.scrollY
+      : viewportHeight * ROAD_INTRO.triggerViewportHeights
+    const end = start + viewportHeight * ROAD_INTRO.transitionViewportHeights
+    introEndScroll = end
+    if (reducedMotion) return window.scrollY >= start ? 1 : 0
+    return smoothstep(start, Math.max(start + 1, end), window.scrollY)
+  }
+
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
+      introProgress = introProgressAt(reducedMotion)
+      const roadReveal = smoothstep(ROAD_INTRO.roadRevealStart, ROAD_INTRO.roadRevealEnd, introProgress)
+      const ballEntry = smoothstep(ROAD_INTRO.ballEntryStart, ROAD_INTRO.ballEntryEnd, introProgress)
       pointer.smoothX += (pointer.x - pointer.smoothX) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
       pointer.smoothY += (pointer.y - pointer.smoothY) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
       shaderPointer.set(pointer.smoothX, pointer.smoothY)
-      const targetProgress = clamp01(journeyProgress(state.scroll) + 0.02)
+      const journeyTargetProgress = clamp01(journeyProgress(state.scroll) + 0.02)
+      const introBallStart = Math.max(0, JOURNEY_START - ROAD_INTRO.ballStartProgressOffset)
+      const introTargetProgress = introBallStart + (ROAD_INTRO.ballArrivalProgress - introBallStart) * ballEntry
+      const handoffDistance = Math.max(1, window.innerHeight * ROAD_INTRO.ballHandoffViewportHeights)
+      const ballHandoff = !ROAD_INTRO.enabled || reducedMotion
+        ? 1
+        : smoothstep(introEndScroll, introEndScroll + handoffDistance, window.scrollY)
+      const targetProgress = introTargetProgress + (journeyTargetProgress - introTargetProgress) * ballHandoff
       const previousProgress = ballProgress
       const damping = reducedMotion ? 18 : state.scroll > 0.78 ? 6.5 : 4.6
       const blend = 1 - Math.exp(-damping * Math.min(delta, 0.05))
@@ -303,6 +342,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         ball.quaternion.premultiply(rotationStep)
         ball.position.copy(point)
         ballPrevious.copy(point)
+        ball.visible = ballEntry > 0.005
       }
 
       const signedPortalDistance = portalDelta.copy(point).sub(portal.position).dot(portalTangent)
@@ -318,7 +358,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       const portalFlash = 1 - smoothstep(PURPLE_PORTAL.radius * 0.18, PURPLE_PORTAL.radius * 1.35, Math.abs(signedPortalDistance))
       violetLight.intensity = purplePhase * 5.2 + portalFlash * 2.4
 
-      const cameraProgress = journeyProgress(state.scroll)
+      // The camera must have a single continuous source of truth. Switching
+      // between scroll progress and ball progress caused a visible position
+      // jump at the end of the intro handoff.
+      const cameraProgress = clamp01(ballProgress - 0.02)
       getRoadFrame(curve, cameraProgress, tangent, normal, right)
       const horizontalPointer = RIBBON_ROAD_FEATURES.horizontalPointerCamera && !coarsePointer && !reducedMotion
         ? pointer.smoothX
@@ -327,13 +370,13 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       if (RIBBON_ROAD_FEATURES.cinematic3DCamera) {
         cameraTarget.copy(curve.getPointAt(cameraProgress))
         heroSideView = 1 - smoothstep(0.0, 0.19, state.scroll)
-        camera.position.copy(cameraTarget)
+        journeyCameraPosition.copy(cameraTarget)
           .addScaledVector(tangent, -7.4 * (1 - heroSideView))
           .addScaledVector(normal, 4.2)
           .addScaledVector(right, heroSideView * 5.6 + Math.sin(state.scroll * Math.PI * 4) * 0.45)
           .addScaledVector(right, horizontalPointer * 0.4)
         const lookAhead = 0.012 + (1 - heroSideView) * 0.033
-        lookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
+        journeyLookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
       } else {
         // The camera follows the real ball but keeps a constant view direction
         // along -X. On screen it can only shift horizontally (Z) and vertically
@@ -341,14 +384,20 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         cameraTarget.copy(point)
         const pointerX = horizontalPointer * SIDE_CAMERA.horizontalPointerTravel
         const pointerY = coarsePointer || reducedMotion ? 0 : pointer.smoothY * SIDE_CAMERA.verticalPointerTravel
-        camera.position.set(
+        journeyCameraPosition.set(
           cameraTarget.x + SIDE_CAMERA.distance,
           cameraTarget.y + SIDE_CAMERA.heightOffset + pointerY,
           cameraTarget.z + pointerX,
         )
-        lookAt.set(cameraTarget.x, camera.position.y, camera.position.z)
+        journeyLookAt.set(cameraTarget.x, journeyCameraPosition.y, journeyCameraPosition.z)
       }
+      const cameraArrival = smoothstep(0, 1, introProgress)
+      introCameraPosition.copy(journeyCameraPosition).addScaledVector(introUp.set(0, 1, 0), ROAD_INTRO.cameraLift)
+      introLookAt.copy(journeyLookAt).addScaledVector(introUp, ROAD_INTRO.cameraLift)
+      camera.position.lerpVectors(introCameraPosition, journeyCameraPosition, cameraArrival)
+      lookAt.lerpVectors(introLookAt, journeyLookAt, cameraArrival)
       camera.lookAt(lookAt)
+      camera.updateMatrixWorld()
 
       const particlesVisibility = 1 - purplePhase
       particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
@@ -361,13 +410,28 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         particleAnchor.copy(curve.getPointAt(anchorProgress)).addScaledVector(normal, 0.5)
         particleRight.copy(right).multiplyScalar(-1)
         particleMatrix.makeBasis(particleRight, normal, tangent)
-        particles.position.copy(particleAnchor)
-        particles.quaternion.setFromRotationMatrix(particleMatrix)
+        particleQuaternion.setFromRotationMatrix(particleMatrix)
+
+        camera.getWorldDirection(introForward)
+        introRight.set(1, 0, 0).applyQuaternion(camera.quaternion)
+        introUp.set(0, 1, 0).applyQuaternion(camera.quaternion)
+        introParticlePosition.copy(camera.position)
+          .addScaledVector(introForward, ROAD_INTRO.particleDistance)
+          .addScaledVector(introRight, ROAD_INTRO.particleRightOffset)
+          .addScaledVector(introUp, ROAD_INTRO.particleVerticalOffset)
+        introParticleQuaternion.copy(camera.quaternion)
+
+        particles.position.lerpVectors(introParticlePosition, particleAnchor, introProgress)
+        particles.quaternion.slerpQuaternions(introParticleQuaternion, particleQuaternion, introProgress)
+        particles.scale.setScalar(ROAD_INTRO.particleIntroScale + (1 - ROAD_INTRO.particleIntroScale) * introProgress)
       }
       ribbonMaterial.uniforms.uTime!.value = elapsed
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
       ribbonMaterial.uniforms.uHover!.value = state.hover
       ribbonMaterial.uniforms.uPulse!.value = state.pulse > 0 ? state.pulse : -1
+      ribbonMaterial.uniforms.uIntroReveal!.value = roadReveal
+      ribbonMaterial.depthWrite = roadReveal > 0.98
+      if (ribbon) ribbon.visible = roadReveal > 0.001
       const portalVisibility = smoothstep(0.34, 0.45, state.scroll) * (1 - smoothstep(0.58, 0.68, state.scroll))
       portalMaterial.emissiveIntensity = 0.72 + portalFlash * 1.15
       portal.visible = portalVisibility > 0.01
@@ -392,6 +456,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     stats: () => ({
       particles: particleCount,
       scrollProgress: state.scroll,
+      transitionProgress: introProgress,
       section: sectionAt(state.scroll),
       ribbonProgress: state.scroll,
       particleState: particleStateAt(state.scroll),

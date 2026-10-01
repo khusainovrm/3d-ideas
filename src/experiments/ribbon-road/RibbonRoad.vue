@@ -40,7 +40,7 @@ const { debug, paneHost } = useDebugPane(metrics, {
     { key: 'fps', label: 'FPS' }, { key: 'dpr', label: 'DPR' }, { key: 'quality', label: 'Quality' },
     { key: 'calls', label: 'Draw Calls' }, { key: 'triangles', label: 'Triangles' },
     { key: 'section', label: 'Current Section' }, { key: 'scrollProgress', label: 'Scroll Progress' },
-    { key: 'ribbonProgress', label: 'Ribbon Progress' }, { key: 'particleState', label: 'Particle State' },
+    { key: 'transitionProgress', label: 'Intro Progress' }, { key: 'ribbonProgress', label: 'Ribbon Progress' }, { key: 'particleState', label: 'Particle State' },
     { key: 'particlesVisible', label: 'Particles Visible' }, { key: 'purplePhase', label: 'Purple Phase Active' },
     { key: 'ballProgress', label: 'Ball Progress' }, { key: 'ballVelocity', label: 'Ball Velocity' },
     { key: 'ballPosition', label: 'Ball Position' }, { key: 'ballLag', label: 'Ball Lag' },
