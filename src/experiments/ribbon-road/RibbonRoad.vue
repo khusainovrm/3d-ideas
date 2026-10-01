@@ -5,6 +5,7 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
 import { createRibbonRoadScene } from './scene'
+import { RIBBON_ROAD_FEATURES } from './route'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -45,6 +46,10 @@ const { debug, paneHost } = useDebugPane(metrics, {
     { key: 'ballPosition', label: 'Ball Position' }, { key: 'ballLag', label: 'Ball Lag' },
     { key: 'ballRotationSpeed', label: 'Ball Rotation Speed' },
   ],
+  setup: (pane) => {
+    pane.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', { label: 'Cinematic 3D camera' })
+    pane.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', { label: 'Horizontal camera follow' })
+  },
 })
 defineExpose({ container, paneHost })
 

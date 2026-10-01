@@ -5,7 +5,7 @@ export type RibbonSplineType = 'centripetal' | 'catmullrom' | 'chordal'
 export const ROAD_WIDTH = 1.825
 export const ROAD_THICKNESS = 0.23
 export const BALL_RADIUS = 0.46
-export const BALL_SURFACE_GAP = 0.025
+export const BALL_SURFACE_GAP = -0.01
 export const JOURNEY_START = 0.15
 export const JOURNEY_END = 0.82
 
@@ -19,6 +19,31 @@ export const ROAD_VISIBILITY = {
   visibleDistance: 15.5,
   fadeSoftness: 5.5,
   strength: 1,
+} as const
+
+export const PURPLE_PORTAL = {
+  radius: BALL_RADIUS,
+  color: '#7655ff',
+  emissive: '#4320aa',
+  background: '#2b105d',
+  crossingSoftness: 0.72,
+} as const
+
+/**
+ * true  — current cinematic camera following the 3D road frame.
+ * false — fixed side view without 3D turns; pointer movement stays in the
+ *         two-dimensional Y/Z observation plane.
+ */
+export const RIBBON_ROAD_FEATURES = {
+  cinematic3DCamera: true,
+  horizontalPointerCamera: true,
+}
+
+export const SIDE_CAMERA = {
+  distance: 10,
+  heightOffset: 1.4,
+  horizontalPointerTravel: 1.1,
+  verticalPointerTravel: 0.65,
 } as const
 
 // export const ROAD_POINT_VALUES: readonly (readonly [number, number, number])[] = [

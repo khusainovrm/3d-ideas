@@ -48,6 +48,12 @@ export interface DebugBinding {
   label: string
 }
 
+export interface DebugPaneOptions {
+  title?: string
+  bindings?: readonly DebugBinding[]
+  setup?: (pane: Pane) => void
+}
+
 const DEFAULT_BINDINGS: readonly DebugBinding[] = [
   { key: 'fps', label: 'FPS' },
   { key: 'dpr', label: 'DPR' },
@@ -59,7 +65,7 @@ const DEFAULT_BINDINGS: readonly DebugBinding[] = [
 
 export const useDebugPane = (
   metrics: RuntimeMetrics,
-  options: { title?: string; bindings?: readonly DebugBinding[] } = {},
+  options: DebugPaneOptions = {},
 ) => {
   const paneHost: Ref<HTMLElement | null> = ref(null)
   const debug = ref(window.location.hash === '#debug')
@@ -76,6 +82,7 @@ export const useDebugPane = (
     for (const binding of options.bindings ?? DEFAULT_BINDINGS) {
       pane.addBinding(metrics, binding.key, { readonly: true, label: binding.label })
     }
+    options.setup?.(pane)
     refreshTimer = window.setInterval(() => pane?.refresh(), 400)
   }
 

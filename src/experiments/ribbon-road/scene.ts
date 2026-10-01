@@ -7,7 +7,6 @@ import {
   BufferGeometry,
   Color,
   DirectionalLight,
-  DoubleSide,
   FrontSide,
   Matrix4,
   Mesh,
@@ -26,8 +25,6 @@ import ribbonVertexShader from './shaders/ribbon.vert.glsl?raw'
 import ribbonFragmentShader from './shaders/ribbon.frag.glsl?raw'
 import particleVertexShader from './shaders/particles.vert.glsl?raw'
 import particleFragmentShader from './shaders/particles.frag.glsl?raw'
-import portalVertexShader from './shaders/portal.vert.glsl?raw'
-import portalFragmentShader from './shaders/portal.frag.glsl?raw'
 import {
   BALL_RADIUS,
   BALL_SURFACE_GAP,
@@ -35,6 +32,9 @@ import {
   JOURNEY_START,
   ROAD_THICKNESS,
   ROAD_VISIBILITY,
+  PURPLE_PORTAL,
+  RIBBON_ROAD_FEATURES,
+  SIDE_CAMERA,
   createRibbonGeometry,
   createRoadCurve,
   getRoadFrame,
@@ -57,8 +57,6 @@ const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, h
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
 const PORTAL_PROGRESS = JOURNEY_START + ROAD_SECTIONS.speakers[0] * (JOURNEY_END - JOURNEY_START) + 0.02
-const FORWARD = new Vector3(0, 0, 1)
-
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value))
 const journeyProgress = (scroll: number): number => JOURNEY_START + clamp01(scroll) * (JOURNEY_END - JOURNEY_START)
 const smoothstep = (a: number, b: number, value: number): number => {
@@ -140,12 +138,12 @@ const buildParticleGeometry = (count: number): BufferGeometry => {
 export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const { scene, camera, renderer, container } = runtime
   const curve = createRoadCurve()
-  const state = { scroll: 0, hover: 0, pulse: 0, speakerPhase: 0 }
+  const state = { scroll: 0, hover: 0, pulse: 0 }
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches
   const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
   const shaderPointer = new Vector2()
   const black = new Color('#070708')
-  const purple = new Color('#1c0d3a')
+  const purple = new Color(PURPLE_PORTAL.background)
   const background = new Color(black)
   const ballMilk = new Color('#e7e1d8')
   const ballPurple = new Color('#d4c9f0')
@@ -161,7 +159,11 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const particleMatrix = new Matrix4()
   const particleRight = new Vector3()
   const particleAnchor = new Vector3()
-  const portalTangent = curve.getTangentAt(PORTAL_PROGRESS).normalize()
+  const portalDelta = new Vector3()
+  const portalTangent = new Vector3()
+  const portalNormal = new Vector3()
+  const portalRight = new Vector3()
+  getRoadFrame(curve, PORTAL_PROGRESS, portalTangent, portalNormal, portalRight)
   let ballProgress = JOURNEY_START + 0.02
   let ballVelocity = 0
   let rotationSpeed = 0
@@ -210,20 +212,21 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     depthWrite: false,
     blending: AdditiveBlending,
   })
-  const portalMaterial = new ShaderMaterial({
-    vertexShader: portalVertexShader,
-    fragmentShader: portalFragmentShader,
-    uniforms: { uTime: { value: 0 }, uStrength: { value: 1 } },
-    transparent: true,
-    depthWrite: false,
-    side: DoubleSide,
+  const portalMaterial = new MeshStandardMaterial({
+    color: PURPLE_PORTAL.color,
+    emissive: PURPLE_PORTAL.emissive,
+    emissiveIntensity: 0.72,
+    roughness: 0.58,
+    metalness: 0,
   })
 
-  const portal = new Mesh(new SphereGeometry(1.0, 36, 24), portalMaterial)
-  portal.position.copy(curve.getPointAt(PORTAL_PROGRESS))
-  portal.quaternion.setFromUnitVectors(FORWARD, portalTangent)
-  portal.scale.set(1, 1, 0.25)
+  const portal = new Mesh(new SphereGeometry(PURPLE_PORTAL.radius, 36, 28), portalMaterial)
+  portal.position.copy(curve.getPointAt(PORTAL_PROGRESS)).addScaledVector(
+    portalNormal,
+    ROAD_THICKNESS / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
+  )
   portal.renderOrder = 2
+  portal.visible = false
   scene.add(portal)
 
   const buildQuality = (quality: QualityLevel): void => {
@@ -259,16 +262,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   })
   let hoverTween: gsap.core.Tween | undefined
   let pulseTween: gsap.core.Tween | undefined
-  let phaseTween: gsap.core.Tween | undefined
-  const speakerTrigger = ScrollTrigger.create({
-    trigger: '#road-speakers',
-    start: 'top 70%',
-    end: 'bottom 30%',
-    onToggle: ({ isActive }) => {
-      phaseTween?.kill()
-      phaseTween = gsap.to(state, { speakerPhase: isActive ? 1 : 0, duration: runtime.reducedMotion ? 0.01 : 0.65, ease: 'sine.inOut' })
-    },
-  })
   const onNavFocus = (event: Event): void => {
     const active = (event as CustomEvent<number>).detail >= 0
     hoverTween?.kill()
@@ -312,27 +305,52 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         ballPrevious.copy(point)
       }
 
-      const portalEntry = smoothstep(PORTAL_PROGRESS - 0.025, PORTAL_PROGRESS + 0.025, ballProgress)
+      const signedPortalDistance = portalDelta.copy(point).sub(portal.position).dot(portalTangent)
+      const portalEntry = smoothstep(
+        -PURPLE_PORTAL.radius * PURPLE_PORTAL.crossingSoftness,
+        PURPLE_PORTAL.radius * PURPLE_PORTAL.crossingSoftness,
+        signedPortalDistance,
+      )
       const portalExit = 1 - smoothstep(ROAD_SECTIONS.speakers[1] - 0.015, ROAD_SECTIONS.registration[0] + 0.055, state.scroll)
-      purplePhase = Math.max(portalEntry * portalExit, state.speakerPhase)
+      purplePhase = portalEntry * portalExit
       background.copy(black).lerp(purple, purplePhase)
       scene.background = background
-      violetLight.intensity = purplePhase * 3.8
+      const portalFlash = 1 - smoothstep(PURPLE_PORTAL.radius * 0.18, PURPLE_PORTAL.radius * 1.35, Math.abs(signedPortalDistance))
+      violetLight.intensity = purplePhase * 5.2 + portalFlash * 2.4
 
       const cameraProgress = journeyProgress(state.scroll)
       getRoadFrame(curve, cameraProgress, tangent, normal, right)
-      cameraTarget.copy(curve.getPointAt(cameraProgress))
-      const heroSideView = 1 - smoothstep(0.0, 0.19, state.scroll)
-      camera.position.copy(cameraTarget)
-        .addScaledVector(tangent, -7.4 * (1 - heroSideView))
-        .addScaledVector(normal, 4.2)
-        .addScaledVector(right, heroSideView * 5.6 + Math.sin(state.scroll * Math.PI * 4) * 0.45)
-        .addScaledVector(right, coarsePointer || reducedMotion ? 0 : pointer.smoothX * 0.4)
-      const lookAhead = 0.012 + (1 - heroSideView) * 0.033
-      lookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
+      const horizontalPointer = RIBBON_ROAD_FEATURES.horizontalPointerCamera && !coarsePointer && !reducedMotion
+        ? pointer.smoothX
+        : 0
+      let heroSideView = 0
+      if (RIBBON_ROAD_FEATURES.cinematic3DCamera) {
+        cameraTarget.copy(curve.getPointAt(cameraProgress))
+        heroSideView = 1 - smoothstep(0.0, 0.19, state.scroll)
+        camera.position.copy(cameraTarget)
+          .addScaledVector(tangent, -7.4 * (1 - heroSideView))
+          .addScaledVector(normal, 4.2)
+          .addScaledVector(right, heroSideView * 5.6 + Math.sin(state.scroll * Math.PI * 4) * 0.45)
+          .addScaledVector(right, horizontalPointer * 0.4)
+        const lookAhead = 0.012 + (1 - heroSideView) * 0.033
+        lookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
+      } else {
+        // The camera follows the real ball but keeps a constant view direction
+        // along -X. On screen it can only shift horizontally (Z) and vertically
+        // (Y), so the route is always observed from a perpendicular side view.
+        cameraTarget.copy(point)
+        const pointerX = horizontalPointer * SIDE_CAMERA.horizontalPointerTravel
+        const pointerY = coarsePointer || reducedMotion ? 0 : pointer.smoothY * SIDE_CAMERA.verticalPointerTravel
+        camera.position.set(
+          cameraTarget.x + SIDE_CAMERA.distance,
+          cameraTarget.y + SIDE_CAMERA.heightOffset + pointerY,
+          cameraTarget.z + pointerX,
+        )
+        lookAt.set(cameraTarget.x, camera.position.y, camera.position.z)
+      }
       camera.lookAt(lookAt)
 
-      const particlesVisibility = 1 - state.speakerPhase
+      const particlesVisibility = 1 - purplePhase
       particleMaterial.uniforms.uTime!.value = elapsed * (reducedMotion ? 0.2 : 1)
       particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
       particleMaterial.uniforms.uVisibility!.value = particlesVisibility
@@ -350,10 +368,11 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
       ribbonMaterial.uniforms.uHover!.value = state.hover
       ribbonMaterial.uniforms.uPulse!.value = state.pulse > 0 ? state.pulse : -1
-      portalMaterial.uniforms.uTime!.value = elapsed
-      portalMaterial.uniforms.uStrength!.value = smoothstep(0.34, 0.49, state.scroll) * (1 - smoothstep(0.73, 0.84, state.scroll))
-      portal.scale.setScalar(0.84 + Math.sin(elapsed * 0.6) * 0.018 + purplePhase * 0.16)
-      portal.scale.z = 0.25
+      const portalVisibility = smoothstep(0.34, 0.45, state.scroll) * (1 - smoothstep(0.58, 0.68, state.scroll))
+      portalMaterial.emissiveIntensity = 0.72 + portalFlash * 1.15
+      portal.visible = portalVisibility > 0.01
+      const portalReveal = smoothstep(0, 0.28, portalVisibility)
+      portal.scale.setScalar(portalReveal)
 
       if (ball) {
         ball.material.color.copy(ballMilk).lerp(ballPurple, purplePhase * 0.72)
@@ -376,7 +395,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       section: sectionAt(state.scroll),
       ribbonProgress: state.scroll,
       particleState: particleStateAt(state.scroll),
-      particlesVisible: state.speakerPhase < 0.05,
+      particlesVisible: purplePhase < 0.05,
       purplePhase: purplePhase > 0.5,
       ballProgress,
       ballVelocity,
@@ -390,8 +409,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       container.removeEventListener('roadcomplete', onComplete)
       hoverTween?.kill()
       pulseTween?.kill()
-      phaseTween?.kill()
-      speakerTrigger.kill()
       scrollTween.scrollTrigger?.kill()
       scrollTween.kill()
       disposeObject(scene)
