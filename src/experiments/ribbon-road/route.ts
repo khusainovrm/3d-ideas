@@ -71,6 +71,8 @@ export const ROAD_INTRO = {
   ballStartProgressOffset: 0.1,
   ballArrivalProgress: JOURNEY_START + 0.02,
   ballHandoffViewportHeights: 0.65,
+  initialSideDistance: 6.8,
+  initialSideHeight: 1.8,
   particleDistance: 8,
   particleRightOffset: 5.2,
   particleVerticalOffset: 0.4,

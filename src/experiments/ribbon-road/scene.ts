@@ -425,11 +425,16 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       let heroSideView = 0
       if (RIBBON_ROAD_FEATURES.cinematic3DCamera) {
         cameraTarget.copy(curve.getPointAt(cameraProgress))
-        heroSideView = 1 - smoothstep(0.0, 0.19, state.scroll)
+        // Hold a true profile view while the road and ball first appear. The
+        // camera only starts orbiting into the journey view after intro has
+        // fully arrived, using the same smooth handoff as the ball.
+        heroSideView = ROAD_INTRO.enabled ? 1 - smoothstep(0, 1, ballHandoff) : 0
+        const cameraHeight = ROAD_INTRO.initialSideHeight
+          + (4.2 - ROAD_INTRO.initialSideHeight) * (1 - heroSideView)
         journeyCameraPosition.copy(cameraTarget)
           .addScaledVector(tangent, -7.4 * (1 - heroSideView))
-          .addScaledVector(normal, 4.2)
-          .addScaledVector(right, heroSideView * 5.6 + Math.sin(state.scroll * Math.PI * 4) * 0.45)
+          .addScaledVector(normal, cameraHeight)
+          .addScaledVector(right, heroSideView * ROAD_INTRO.initialSideDistance + Math.sin(state.scroll * Math.PI * 4) * 0.45)
           .addScaledVector(right, horizontalPointer * 0.4)
         const lookAhead = 0.012 + (1 - heroSideView) * 0.033
         journeyLookAt.copy(curve.getPointAt(clamp01(cameraProgress + lookAhead))).addScaledVector(normal, 0.2)
