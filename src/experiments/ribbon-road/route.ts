@@ -68,6 +68,8 @@ export const ROAD_INTRO = {
   particleRightOffset: 5.2,
   particleVerticalOffset: 0.4,
   particleIntroScale: 0.42,
+  particleNoiseAmplitude: 0.24,
+  particleNoiseSpeed: 0.42,
 } as const
 
 

@@ -219,6 +219,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     uniforms: {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
       uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
+      uIntroNoise: { value: ROAD_INTRO.enabled && !runtime.reducedMotion ? 1 : 0 },
+      uNoiseAmplitude: { value: ROAD_INTRO.particleNoiseAmplitude },
+      uNoiseSpeed: { value: ROAD_INTRO.particleNoiseSpeed },
     },
     transparent: true,
     depthWrite: false,
@@ -404,6 +407,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uState!.value = particleMorphAt(state.scroll)
       particleMaterial.uniforms.uVisibility!.value = particlesVisibility
       particleMaterial.uniforms.uPointerStrength!.value = coarsePointer || reducedMotion ? 0 : 1
+      particleMaterial.uniforms.uIntroNoise!.value = reducedMotion
+        ? 0
+        : 1 - smoothstep(0.08, 0.92, introProgress)
       if (particles) {
         const anchorProgress = clamp01(ballProgress + 0.008)
         getRoadFrame(curve, anchorProgress, tangent, normal, right)
