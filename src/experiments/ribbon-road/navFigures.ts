@@ -1,9 +1,17 @@
-import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS, type NavigationShape } from './navigation'
+import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
+import { ROAD_INTRO } from './route'
+import {
+  PARTICLE_FIGURE_DATA,
+  PARTICLE_FIGURE_ENCODING,
+  type ParticleFigureKey,
+} from './particleFigureData.generated'
 
 export interface NavigationFigureAttributes {
   targets: Float32Array
   data: Float32Array
 }
+
+type NavigationQuality = keyof typeof NAV_CONSTELLATION.qualityParticleScale
 
 export const NAV_LAYOUT_SCALE_X = 16.153846
 export const NAV_LAYOUT_SCALE_Y = 10.952381
@@ -23,100 +31,101 @@ export const navigationFigureCenter = (index: number): readonly [number, number,
   ]
 }
 
-const MOBILE_FIGURE_CENTERS: readonly (readonly [number, number, number])[] = [
-  [-2.3, 1, 0], [0, 0.05, 0], [2, 1, 0], [-1.2, -1.5, 0], [1.25, -2.25, 0],
+const MOBILE_FIGURE_CENTERS: readonly (readonly [number, number])[] = [
+  [0.18, 0.55], [0.5, 0.55], [0.82, 0.55], [0.32, 0.76], [0.68, 0.76],
 ]
 
-export const navigationMobileFigureCenter = (index: number): readonly [number, number, number] => (
-  MOBILE_FIGURE_CENTERS[index] ?? navigationFigureCenter(index)
-)
-
-const fract = (value: number): number => value - Math.floor(value)
-const seeded = (index: number, salt: number): number => fract(Math.sin(index * 91.713 + salt * 17.17) * 43758.5453)
-const gaussian = (index: number, salt: number): number => {
-  const u = Math.max(0.00001, seeded(index, salt))
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * seeded(index, salt + 1))
-}
-
-const shapePoint = (
-  shape: NavigationShape,
-  pointIndex: number,
-  count: number,
-): readonly [number, number] => {
-  const unit = (pointIndex + seeded(pointIndex, 31)) / Math.max(1, count)
-  const jitterX = gaussian(pointIndex, 32) * 0.025
-  const jitterY = gaussian(pointIndex, 34) * 0.025
-
-  if (shape === 'ring') {
-    const angle = unit * Math.PI * 2
-    const radius = 0.47 + gaussian(pointIndex, 36) * 0.035
-    return [Math.cos(angle) * radius + jitterX, Math.sin(angle) * radius + jitterY]
-  }
-
-  if (shape === 'bars') {
-    const bar = pointIndex % 3
-    const x = (bar - 1) * 0.34 + jitterX
-    const height = [0.62, 0.94, 0.48][bar]!
-    return [x, (seeded(pointIndex, 38) - 0.5) * height + jitterY]
-  }
-
-  if (shape === 'diamond') {
-    const perimeter = unit * 4
-    const edge = Math.floor(perimeter)
-    const t = perimeter - edge
-    const vertices = [[0, 0.58], [0.58, 0], [0, -0.58], [-0.58, 0], [0, 0.58]] as const
-    const from = vertices[edge]!
-    const to = vertices[edge + 1]!
-    return [from[0] + (to[0] - from[0]) * t + jitterX, from[1] + (to[1] - from[1]) * t + jitterY]
-  }
-
-  if (shape === 'cross') {
-    const horizontal = pointIndex % 2 === 0
-    const along = (seeded(pointIndex, 40) - 0.5) * 1.15
-    const across = gaussian(pointIndex, 42) * 0.055
-    return horizontal ? [along, across] : [across, along]
-  }
-
-  const columns = Math.max(2, Math.ceil(Math.sqrt(count)))
-  const column = pointIndex % columns
-  const row = Math.floor(pointIndex / columns)
-  const rows = Math.ceil(count / columns)
+export const navigationMobileFigureCenter = (
+  index: number,
+  width = window.innerWidth,
+  height = window.innerHeight,
+  fov = 46,
+): readonly [number, number, number] => {
+  const screenCenter = MOBILE_FIGURE_CENTERS[index]
+  if (!screenCenter) return navigationFigureCenter(index)
+  const worldHeight = 2 * ROAD_INTRO.particleDistance * Math.tan(fov * Math.PI / 360)
+  const worldWidth = worldHeight * width / Math.max(1, height)
   return [
-    (column / Math.max(1, columns - 1) - 0.5) * 1.05 + jitterX,
-    (row / Math.max(1, rows - 1) - 0.5) * 1.05 + jitterY,
+    ((screenCenter[0] - 0.5 - ROAD_INTRO.particleViewportOffsetX) * worldWidth
+      - ROAD_INTRO.particleRightOffset) / ROAD_INTRO.particleIntroScale,
+    ((0.5 - screenCenter[1]) * worldHeight - ROAD_INTRO.particleVerticalOffset)
+      / ROAD_INTRO.particleIntroScale,
+    0,
   ]
 }
 
-export const generateNavigationFigures = (count: number): NavigationFigureAttributes => {
+const fract = (value: number): number => value - Math.floor(value)
+const seeded = (index: number, salt: number): number => fract(Math.sin(index * 91.713 + salt * 17.17) * 43758.5453)
+const decodedFigures = new Map<ParticleFigureKey, Uint8Array>()
+
+const decodeFigure = (shape: ParticleFigureKey): Uint8Array => {
+  const cached = decodedFigures.get(shape)
+  if (cached) return cached
+  const binary = atob(PARTICLE_FIGURE_DATA[shape].data)
+  const decoded = Uint8Array.from(binary, (character) => character.charCodeAt(0))
+  decodedFigures.set(shape, decoded)
+  return decoded
+}
+
+const decodeRange = (value: number, min: number, max: number): number => (
+  min + value / 255 * (max - min)
+)
+
+export const generateNavigationFigures = (
+  count: number,
+  quality: NavigationQuality,
+): NavigationFigureAttributes => {
   const targets = new Float32Array(count * 3)
   const data = new Float32Array(count * 3)
-  for (let index = 0; index < count; index += 1) data[index * 3] = -1
+  for (let index = 0; index < count; index += 1) {
+    data[index * 3] = -1
+  }
 
   const figureCount = Math.max(1, Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length))
-  const particlesPerFigure = Math.min(
-    NAV_CONSTELLATION.particlesPerFigure,
-    Math.floor(count / figureCount),
-  )
-  const selectedCount = figureCount * particlesPerFigure
+  const qualityScale = NAV_CONSTELLATION.qualityParticleScale[quality]
+  const requestedCounts = ROAD_NAV_SECTIONS.slice(0, figureCount).map(({ particleCount }) => (
+    Math.max(1, Math.round(particleCount * qualityScale))
+  ))
+  const requestedTotal = requestedCounts.reduce((sum, figureCountValue) => sum + figureCountValue, 0)
+  const availableScale = Math.min(1, count / Math.max(1, requestedTotal))
+  const figureParticleCounts = requestedCounts.map((figureCountValue) => (
+    Math.max(1, Math.floor(figureCountValue * availableScale))
+  ))
   const maxDelay = Math.max(0.01, (figureCount - 1) * NAV_CONSTELLATION.formationStagger + 0.14)
+  const sizeScale = NAV_CONSTELLATION.figureSize / 0.07
+  const { stride, positionExtent, depthExtent } = PARTICLE_FIGURE_ENCODING
+  let particleCursor = 0
 
-  for (let index = 0; index < selectedCount; index += 1) {
-    const figureIndex = Math.floor(index / particlesPerFigure)
-    const pointIndex = index % particlesPerFigure
-    const center = navigationFigureCenter(figureIndex)
+  for (let figureIndex = 0; figureIndex < figureCount; figureIndex += 1) {
     const section = ROAD_NAV_SECTIONS[figureIndex]!
-    const [offsetX, offsetY] = shapePoint(section.shape, pointIndex, particlesPerFigure)
-    const targetOffset = index * 3
-    const sizeScale = NAV_CONSTELLATION.figureSize / 0.07
-    targets[targetOffset] = center[0] + offsetX * sizeScale
-    targets[targetOffset + 1] = center[1] + offsetY * sizeScale
-    targets[targetOffset + 2] = center[2] + gaussian(index, 50) * 0.035
-    data[targetOffset] = figureIndex
-    data[targetOffset + 1] = 1
-    data[targetOffset + 2] = (
-      figureIndex * NAV_CONSTELLATION.formationStagger
-      + seeded(index, 52) * 0.14
-    ) / maxDelay * 0.62
+    const shape = section.shape as ParticleFigureKey
+    const encoded = decodeFigure(shape)
+    const sourceCount = PARTICLE_FIGURE_DATA[shape].count
+    const targetCount = figureParticleCounts[figureIndex]!
+    const center = navigationFigureCenter(figureIndex)
+
+    for (let pointIndex = 0; pointIndex < targetCount && particleCursor < count; pointIndex += 1) {
+      // Even deterministic downsampling keeps every luminance layer represented at lower qualities.
+      const sourceIndex = Math.min(sourceCount - 1, Math.floor((pointIndex + 0.5) * sourceCount / targetCount))
+      const sourceOffset = sourceIndex * stride
+      const targetOffset = particleCursor * 3
+      const localX = ((encoded[sourceOffset]! + encoded[sourceOffset + 1]! * 256) / 65535 * 2 - 1) * positionExtent
+      const localY = ((encoded[sourceOffset + 2]! + encoded[sourceOffset + 3]! * 256) / 65535 * 2 - 1) * positionExtent
+      const localZ = decodeRange(encoded[sourceOffset + 4]!, -depthExtent, depthExtent)
+      targets[targetOffset] = center[0] + localX * sizeScale
+      targets[targetOffset + 1] = center[1] + localY * sizeScale
+      targets[targetOffset + 2] = center[2] + localZ * sizeScale
+      data[targetOffset] = figureIndex
+      const formationDelay = (
+        figureIndex * NAV_CONSTELLATION.formationStagger
+        + seeded(particleCursor, 52) * 0.14
+      ) / maxDelay * 0.62
+      const delayByte = Math.round(Math.max(0, Math.min(1, formationDelay)) * 255)
+      // Pack two exact uint8 values into each float to stay within the WebGL attribute limit.
+      data[targetOffset + 1] = delayByte + encoded[sourceOffset + 5]! * 256
+      data[targetOffset + 2] = encoded[sourceOffset + 6]! + encoded[sourceOffset + 7]! * 256
+      particleCursor += 1
+    }
   }
 
   return { targets, data }

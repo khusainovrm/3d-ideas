@@ -1,3 +1,5 @@
+import { PARTICLE_FIGURE_DATA } from './particleFigureData.generated'
+
 export type RoadSectionId =
   | 'road-about'
   | 'road-program'
@@ -5,7 +7,7 @@ export type RoadSectionId =
   | 'road-registration'
   | 'road-partners'
 
-export type NavigationShape = 'ring' | 'bars' | 'diamond' | 'cross' | 'grid'
+export type NavigationShape = 'diffuseCloud' | 'noisySphere' | 'lens' | 'starBurst' | 'solidSphere'
 
 export interface RoadNavigationSection {
   id: RoadSectionId
@@ -13,14 +15,16 @@ export interface RoadNavigationSection {
   shape: NavigationShape
   className: string
   roadIndex: number
+  particleCount: number
+  hitRadius: number
 }
 
 export const ROAD_NAV_SECTIONS: readonly RoadNavigationSection[] = [
-  { id: 'road-about', label: 'О конференции', shape: 'ring', className: 'road-orbit--about', roadIndex: 0 },
-  { id: 'road-program', label: 'Программа', shape: 'bars', className: 'road-orbit--program', roadIndex: 1 },
-  { id: 'road-speakers', label: 'Спикеры', shape: 'diamond', className: 'road-orbit--speakers', roadIndex: 2 },
-  { id: 'road-registration', label: 'Регистрация', shape: 'cross', className: 'road-orbit--registration', roadIndex: 3 },
-  { id: 'road-partners', label: 'Партнёры', shape: 'grid', className: 'road-orbit--partners', roadIndex: 4 },
+  { id: 'road-about', label: 'О конференции', shape: 'diffuseCloud', className: 'road-orbit--about', roadIndex: 0, particleCount: PARTICLE_FIGURE_DATA.diffuseCloud.count, hitRadius: 62 },
+  { id: 'road-program', label: 'Программа', shape: 'noisySphere', className: 'road-orbit--program', roadIndex: 1, particleCount: PARTICLE_FIGURE_DATA.noisySphere.count, hitRadius: 62 },
+  { id: 'road-speakers', label: 'Спикеры', shape: 'lens', className: 'road-orbit--speakers', roadIndex: 2, particleCount: PARTICLE_FIGURE_DATA.lens.count, hitRadius: 60 },
+  { id: 'road-registration', label: 'Регистрация', shape: 'starBurst', className: 'road-orbit--registration', roadIndex: 3, particleCount: PARTICLE_FIGURE_DATA.starBurst.count, hitRadius: 72 },
+  { id: 'road-partners', label: 'Партнёры', shape: 'solidSphere', className: 'road-orbit--partners', roadIndex: 4, particleCount: PARTICLE_FIGURE_DATA.solidSphere.count, hitRadius: 64 },
 ] as const
 
 export const ORIGINAL_SECTION_ORDER: readonly RoadSectionId[] = ROAD_NAV_SECTIONS.map(({ id }) => id)
@@ -28,7 +32,7 @@ export const ORIGINAL_SECTION_ORDER: readonly RoadSectionId[] = ROAD_NAV_SECTION
 export const NAV_CONSTELLATION = {
   enabled: true,
   figureCount: 5,
-  particlesPerFigure: 260,
+  qualityParticleScale: { low: 0.6, medium: 0.8, high: 1 },
   formationDelay: 0.25,
   formationDuration: 1.4,
   formationStagger: 0.1,
@@ -39,7 +43,7 @@ export const NAV_CONSTELLATION = {
   checkerColumns: 5,
   checkerStepX: 0.13,
   checkerStepY: 0.105,
-  figureSize: 0.07,
+  figureSize: 0.105,
   figureHitRadius: 58,
   pointerDistortionRadius: 96,
   pointerAttraction: 0.16,

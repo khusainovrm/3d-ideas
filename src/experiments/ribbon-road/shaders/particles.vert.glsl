@@ -22,6 +22,7 @@ uniform float uNavCheckerColumns;
 uniform float uNavCheckerStepX;
 uniform float uNavCheckerStepY;
 uniform float uNavMobile;
+uniform vec3 uNavMobileCenters[5];
 uniform float uIntroNoise;
 uniform float uNoiseAmplitude;
 uniform float uNoiseSpeed;
@@ -62,11 +63,11 @@ vec3 navCenter(float figureIndex) {
 }
 
 vec3 navMobileCenter(float figureIndex) {
-  if (figureIndex < 0.5) return vec3(-2.3, 1.0, 0.0);
-  if (figureIndex < 1.5) return vec3(0.0, 0.05, 0.0);
-  if (figureIndex < 2.5) return vec3(2.0, 1.0, 0.0);
-  if (figureIndex < 3.5) return vec3(-1.2, -1.5, 0.0);
-  return vec3(1.25, -2.25, 0.0);
+  if (figureIndex < 0.5) return uNavMobileCenters[0];
+  if (figureIndex < 1.5) return uNavMobileCenters[1];
+  if (figureIndex < 2.5) return uNavMobileCenters[2];
+  if (figureIndex < 3.5) return uNavMobileCenters[3];
+  return uNavMobileCenters[4];
 }
 
 vec3 statePosition(float state) {
@@ -81,10 +82,19 @@ void main() {
   float heroAmount = 1.0 - smoothstep(0.0, 0.85, uState);
   float heroReveal = smoothstep(0.0, 1.0, uHeroReveal);
   float figureIndex = aNavData.x;
-  float navMembership = aNavData.y;
+  float navMembership = step(-0.5, figureIndex);
+  float navFormationDelay = mod(aNavData.y, 256.0) / 255.0;
+  float navAlphaByte = floor(aNavData.y / 256.0);
+  float navSizeByte = mod(aNavData.z, 256.0);
+  float navBrightnessByte = floor(aNavData.z / 256.0);
+  vec3 navStyle = vec3(
+    mix(0.08, 0.82, navAlphaByte / 255.0),
+    mix(0.42, 1.75, navSizeByte / 255.0),
+    mix(0.45, 1.45, navBrightnessByte / 255.0)
+  );
   float figureHover = navHover(figureIndex) * navMembership;
   float selectedAmount = (1.0 - step(0.25, abs(figureIndex - uNavSelectedFigure))) * navMembership;
-  float figureProgress = smoothstep(aNavData.z, min(1.0, aNavData.z + 0.28), uNavFormation)
+  float figureProgress = smoothstep(navFormationDelay, min(1.0, navFormationDelay + 0.28), uNavFormation)
     * navMembership * heroAmount;
   vec3 desktopCenter = navCenter(figureIndex);
   vec3 figureCenter = mix(desktopCenter, navMobileCenter(figureIndex), uNavMobile);
@@ -102,7 +112,8 @@ void main() {
     cos(noiseTime * 0.71 + phase * 1.91) + sin(noiseTime * 1.43 + phase * 0.67) * 0.42,
     sin(noiseTime * 0.59 + phase * 2.13) + cos(noiseTime * 1.27 + phase * 0.91) * 0.36
   );
-  float driftStrength = mix(1.0, aHeroDrift, heroAmount);
+  // Keep the reference silhouette stable once assembled, especially the thin lens rim.
+  float driftStrength = mix(1.0, aHeroDrift, heroAmount) * mix(1.0, 0.018, figureProgress);
   p += introDrift * uNoiseAmplitude * personalAmplitude * uIntroNoise * driftStrength;
 
   p.x += sin(uTime * 0.16 + aSeed * 19.0) * 0.035 * driftStrength;
@@ -124,9 +135,10 @@ void main() {
   // physical pixel, while only the three terminal nodes get a larger halo.
   float heroSize = aHeroSize * 0.6;
   float particleSize = mix(aSize, heroSize, heroAmount);
-  particleSize *= mix(1.0, 1.18, figureProgress);
+  particleSize = mix(particleSize, navStyle.y, figureProgress);
   particleSize *= mix(1.0, uNavHoverScale, figureHover * figureProgress);
-  gl_PointSize = min(12.0, particleSize * heroGlow * uPixelRatio * perspective);
+  float pointGlow = mix(heroGlow, 1.0, figureProgress);
+  gl_PointSize = min(12.0, particleSize * pointGlow * uPixelRatio * perspective);
   gl_Position = clip;
   float regularAlpha = (0.22 + fract(aSeed * 31.7) * 0.48) * aJourneyVisibility;
   // Each particle gets a stable random start time. Start times occupy the
@@ -134,13 +146,14 @@ void main() {
   float revealStart = fract(aSeed * 91.713 + aHeroDrift * 17.17) * 0.82;
   float revealOpacity = smoothstep(revealStart, revealStart + 0.18, heroReveal);
   float particleAlpha = mix(regularAlpha, aHeroAlpha * 0.82, heroAmount);
-  float cloudDim = mix(1.0, 0.48, uNavFormation * (1.0 - navMembership) * heroAmount);
-  float figureAlpha = mix(1.0, 1.3, figureProgress);
-  vAlpha = uVisibility * particleAlpha * mix(1.0, revealOpacity, heroAmount) * cloudDim * figureAlpha;
-  vAccent = step(mix(0.965, 0.997, heroAmount), aSeed);
-  float formedBrightness = mix(1.0, 1.35, figureProgress);
+  float cloudDim = mix(1.0, 0.14, uNavFormation * (1.0 - navMembership) * heroAmount);
+  float revealedAlpha = particleAlpha * mix(1.0, revealOpacity, heroAmount);
+  float styledAlpha = mix(revealedAlpha, min(1.0, navStyle.x), figureProgress);
+  vAlpha = uVisibility * styledAlpha * cloudDim;
+  vAccent = step(mix(0.965, 0.997, heroAmount), aSeed) * (1.0 - figureProgress);
+  float formedBrightness = mix(1.0, navStyle.z, figureProgress);
   float selectedBrightness = mix(1.0, uNavSelectedBrightness, selectedAmount * figureProgress);
-  vNavBrightness = formedBrightness
+  vNavBrightness = min(2.6, formedBrightness
     * mix(1.0, uNavHoverBrightness, figureHover * figureProgress)
-    * selectedBrightness;
+    * selectedBrightness);
 }

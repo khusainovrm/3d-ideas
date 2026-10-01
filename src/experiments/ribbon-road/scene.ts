@@ -78,7 +78,7 @@ interface ParticleConnection {
   createdAt: number
 }
 
-const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 4000, medium: 8000, high: 16000 }
+const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 16000, medium: 24000, high: 32000 }
 const JOURNEY_PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
@@ -111,10 +111,10 @@ const seeded = (index: number, salt: number): number => {
   return value - Math.floor(value)
 }
 
-const buildParticleGeometry = (count: number, journeyCount: number): BufferGeometry => {
+const buildParticleGeometry = (count: number, journeyCount: number, quality: QualityLevel): BufferGeometry => {
   const geometry = new BufferGeometry()
   const hero = generateHeroCloud(count)
-  const navigation = generateNavigationFigures(count)
+  const navigation = generateNavigationFigures(count, quality)
   const about = new Float32Array(count * 3)
   const program = new Float32Array(count * 3)
   const registration = new Float32Array(count * 3)
@@ -278,6 +278,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       uNavCheckerStepX: { value: NAV_CONSTELLATION.checkerStepX * NAV_LAYOUT_SCALE_X },
       uNavCheckerStepY: { value: NAV_CONSTELLATION.checkerStepY * NAV_LAYOUT_SCALE_Y },
       uNavMobile: { value: window.innerWidth <= 820 ? 1 : 0 },
+      uNavMobileCenters: { value: ROAD_NAV_SECTIONS.map((_, index) => new Vector3(...navigationMobileFigureCenter(index))) },
       uIntroNoise: { value: ROAD_INTRO.enabled && !runtime.reducedMotion ? 1 : 0 },
       uNoiseAmplitude: { value: ROAD_INTRO.particleNoiseAmplitude },
       uNoiseSpeed: { value: ROAD_INTRO.particleNoiseSpeed },
@@ -353,7 +354,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
     if (particles) { particles.parent?.remove(particles); particles.geometry.dispose() }
     particleCount = PARTICLE_COUNTS[quality]
-    particles = new Points(buildParticleGeometry(particleCount, JOURNEY_PARTICLE_COUNTS[quality]), particleMaterial)
+    particles = new Points(buildParticleGeometry(particleCount, JOURNEY_PARTICLE_COUNTS[quality], quality), particleMaterial)
     particles.frustumCulled = false
     scene.add(particles)
 
@@ -478,13 +479,14 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (!particles || formationProgress < 0.999 || visibleDomSection() !== 'hero') return -1
     updateFigureScreenCenters()
     let closest = -1
-    let closestDistance: number = NAV_CONSTELLATION.figureHitRadius
+    let closestDistance = Number.POSITIVE_INFINITY
     const count = Math.min(NAV_CONSTELLATION.figureCount, ROAD_NAV_SECTIONS.length)
     for (let index = 0; index < count; index += 1) {
       const screenX = figureScreenCenters[index * 2] ?? -1000
       const screenY = figureScreenCenters[index * 2 + 1] ?? -1000
       const distance = Math.hypot(clientX - screenX, clientY - screenY)
-      if (distance < closestDistance) {
+      const hitRadius = ROAD_NAV_SECTIONS[index]?.hitRadius ?? NAV_CONSTELLATION.figureHitRadius
+      if (distance < hitRadius && distance < closestDistance) {
         closestDistance = distance
         closest = index
       }
@@ -842,6 +844,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
       particleMaterial.uniforms.uViewport!.value.set(width, height)
       particleMaterial.uniforms.uNavMobile!.value = width <= 820 ? 1 : 0
+      const mobileCenters = particleMaterial.uniforms.uNavMobileCenters!.value as Vector3[]
+      mobileCenters.forEach((center, index) => center.set(...navigationMobileFigureCenter(index, width, height, camera.fov)))
     },
     setQuality: (quality, profile) => {
       buildQuality(quality)
