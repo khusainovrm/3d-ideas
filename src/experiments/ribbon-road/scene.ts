@@ -545,9 +545,15 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         camera.getWorldDirection(introForward)
         introRight.set(1, 0, 0).applyQuaternion(camera.quaternion)
         introUp.set(0, 1, 0).applyQuaternion(camera.quaternion)
+        const particleViewportWidth = 2
+          * ROAD_INTRO.particleDistance
+          * Math.tan(camera.fov * Math.PI / 360)
+          * camera.aspect
+        const particleRightOffset = ROAD_INTRO.particleRightOffset
+          + particleViewportWidth * ROAD_INTRO.particleViewportOffsetX
         introParticlePosition.copy(camera.position)
           .addScaledVector(introForward, ROAD_INTRO.particleDistance)
-          .addScaledVector(introRight, ROAD_INTRO.particleRightOffset)
+          .addScaledVector(introRight, particleRightOffset)
           .addScaledVector(introUp, ROAD_INTRO.particleVerticalOffset)
         introParticleQuaternion.copy(camera.quaternion)
 

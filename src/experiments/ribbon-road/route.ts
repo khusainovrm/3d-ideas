@@ -90,6 +90,7 @@ export const ROAD_INTRO = {
   initialSideHeight: 1.8,
   particleDistance: 8,
   particleRightOffset: 0.65,
+  particleViewportOffsetX: 0.1,
   particleVerticalOffset: 0,
   particleIntroScale: 0.42,
   particleNoiseAmplitude: 0.24,
