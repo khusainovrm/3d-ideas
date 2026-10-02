@@ -2,10 +2,9 @@ uniform float uTime;
 uniform float uState;
 uniform float uPixelRatio;
 uniform float uVisibility;
-uniform vec2 uPointer;
+uniform sampler2D uDisplacementTexture;
 uniform vec2 uViewport;
 uniform float uPointerStrength;
-uniform float uPointerRadius;
 uniform float uPointerAttraction;
 uniform float uHeroReveal;
 uniform float uNavFormation;
@@ -42,6 +41,7 @@ attribute vec3 aNavData;
 varying float vAlpha;
 varying float vAccent;
 varying float vNavBrightness;
+varying float vFigureForeground;
 
 float navHover(float figureIndex) {
   if (figureIndex < 0.5) return uNavHover0;
@@ -108,14 +108,19 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   vec4 clip = projectionMatrix * mv;
   vec2 particleNdc = clip.xy / max(0.0001, clip.w);
-  vec2 pointerDeltaPx = (particleNdc - uPointer) * 0.5 * uViewport;
-  float pointerDistancePx = length(pointerDeltaPx);
-  float pointerInfluence = (1.0 - smoothstep(uPointerRadius * 0.2, uPointerRadius, pointerDistancePx))
-    * uPointerStrength * heroAmount;
-  // Pull nearby particles towards the pointer in screen space. The center
-  // remains stable while the outer edge creates a soft local distortion.
-  vec2 pointerPull = (uPointer - particleNdc) * pointerInfluence * uPointerAttraction;
-  clip.xy += pointerPull * clip.w;
+  vec2 trailUv = particleNdc * 0.5 + 0.5;
+  float inViewport = step(0.0, trailUv.x) * step(trailUv.x, 1.0)
+    * step(0.0, trailUv.y) * step(trailUv.y, 1.0);
+  float trail = texture2D(uDisplacementTexture, clamp(trailUv, 0.0, 1.0)).r;
+  float displacement = smoothstep(0.08, 0.65, trail)
+    * uPointerStrength * heroAmount * (1.0 - figureProgress) * inViewport;
+  // Like the reference: stable personal directions, mostly towards the camera.
+  // Once formed, section figures never receive displacement.
+  float angle = aSeed * 6.2831853;
+  vec3 direction = normalize(vec3(cos(angle) * 0.2, sin(angle) * 0.2, 1.0));
+  mv.xyz += direction * displacement * uPointerAttraction * 12.0
+    * mix(0.15, 1.0, fract(aSeed * 73.71));
+  clip = projectionMatrix * mv;
   float perspective = 28.0 / max(2.0, -mv.z);
   float heroGlow = mix(1.0, aHeroGlow, heroAmount);
   // The reference is photographic dust: most hero grains are close to one
@@ -144,6 +149,7 @@ void main() {
   float revealedAlpha = particleAlpha * mix(1.0, revealOpacity, heroAmount);
   float styledAlpha = mix(revealedAlpha, min(1.0, navStyle.x), figureProgress);
   vAlpha = uVisibility * styledAlpha * cloudDim * backgroundCopyVisibility;
+  vFigureForeground = figureProgress;
   vAccent = step(0.965, aSeed) * (1.0 - heroAmount) * (1.0 - figureProgress);
   float formedBrightness = mix(1.0, navStyle.z, figureProgress);
   float selectedBrightness = mix(1.0, uNavSelectedBrightness, selectedAmount * figureProgress);

@@ -164,6 +164,7 @@ import {createRibbonRoadScene} from './scene'
 import {BALL_APPEARANCE, PARTICLE_CONNECTIONS, RIBBON_ROAD_FEATURES, ROAD_APPEARANCE} from './route'
 import {NAV_CONSTELLATION, ORIGINAL_SECTION_ORDER, ROAD_NAV_SECTIONS, type RoadSectionId} from './navigation'
 import {createScrollGate} from './useScrollGate'
+import {HERO_CURSOR_EFFECT} from './cursorEffect'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -303,8 +304,11 @@ const {debug, paneHost} = useDebugPane(metrics, {
     interaction.addBinding(NAV_CONSTELLATION, 'hoverBrightness', {label: 'Яркость акцента', min: 0.5, max: 3, step: 0.05})
     interaction.addBinding(NAV_CONSTELLATION, 'hoverResponse', {label: 'Скорость отклика', min: 1, max: 25, step: 0.5})
     interaction.addBinding(NAV_CONSTELLATION, 'selectedBrightness', {label: 'Яркость выбора', min: 0.5, max: 3, step: 0.05})
-    interaction.addBinding(NAV_CONSTELLATION, 'pointerDistortionRadius', {label: 'Радиус мыши, px', min: 16, max: 200, step: 1})
-    interaction.addBinding(NAV_CONSTELLATION, 'pointerAttraction', {label: 'Притяжение', min: 0, max: 0.4, step: 0.01})
+    const cursor = hero.addFolder({title: 'Анимация курсора', expanded: true})
+    cursor.addBinding(HERO_CURSOR_EFFECT, 'enabled', {label: 'Ховер туманности'})
+    cursor.addBinding(HERO_CURSOR_EFFECT, 'intensity', {label: 'Интенсивность', min: 0, max: 0.4, step: 0.01})
+    cursor.addBinding(HERO_CURSOR_EFFECT, 'duration', {label: 'Затухание, с', min: 0.1, max: 3, step: 0.05})
+    cursor.addBinding(HERO_CURSOR_EFFECT, 'diameter', {label: 'Диаметр, px', min: 32, max: 400, step: 2})
     interaction.addBinding(NAV_CONSTELLATION, 'scrollDuration', {label: 'Переход к секции, с', min: 0, max: 4, step: 0.1})
     const density = hero.addFolder({title: 'Плотность по качеству', expanded: false})
     for (const level of ['low', 'medium', 'high'] as const) {

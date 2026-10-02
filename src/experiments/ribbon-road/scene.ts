@@ -3,6 +3,10 @@ import { watch } from 'vue'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
   AdditiveBlending,
+  CustomBlending,
+  OneFactor,
+  OneMinusSrcAlphaFactor,
+  ZeroFactor,
   AmbientLight,
   BufferAttribute,
   BufferGeometry,
@@ -33,6 +37,8 @@ import particleFragmentShader from './shaders/particles.frag.glsl?raw'
 import { generateHeroCloud } from './heroCloud'
 import { generateNavigationFigures } from './navFigures'
 import { createNavigationLayout } from './navLayout'
+import { createCursorTrail } from './cursorTrail'
+import { HERO_CURSOR_EFFECT } from './cursorEffect'
 import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
 import type { RoadSectionId } from './navigation'
 import { roadPointValuesAt } from './roadPaths'
@@ -172,6 +178,15 @@ const buildParticleGeometry = (count: number, journeyCount: number, quality: Qua
     }
     geometry.setAttribute(name, new BufferAttribute(expanded, attribute.itemSize))
   }
+  // Draw all nebula particles first, then the points forming section figures.
+  // Combined with foreground alpha compositing this keeps the animated trail
+  // behind the figures, without another Points object or geometry copy.
+  const totalCount = count + figureParticleCount
+  const drawOrder = new Uint32Array(totalCount)
+  let cursor = 0
+  for (let index = figureParticleCount; index < totalCount; index++) drawOrder[cursor++] = index
+  for (let index = 0; index < figureParticleCount; index++) drawOrder[cursor++] = index
+  geometry.setIndex(new BufferAttribute(drawOrder, 1))
   return geometry
 }
 
@@ -183,7 +198,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const hoverWeights = new Float32Array(ROAD_NAV_SECTIONS.length)
   const coarsePointer = window.matchMedia('(pointer: coarse)').matches
   const pointer = { x: 0, y: 0, smoothX: 0, smoothY: 0 }
-  const shaderPointer = new Vector2()
+  const cursorTrail = createCursorTrail()
   const rayPointer = new Vector2()
   const figureWorld = new Vector3()
   const figureProjected = new Vector3()
@@ -293,9 +308,9 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     fragmentShader: particleFragmentShader,
     uniforms: {
       uTime: { value: 0 }, uState: { value: 0 }, uPixelRatio: { value: renderer.getPixelRatio() }, uVisibility: { value: 1 },
-      uPointer: { value: shaderPointer }, uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
-      uPointerRadius: { value: NAV_CONSTELLATION.pointerDistortionRadius },
-      uPointerAttraction: { value: NAV_CONSTELLATION.pointerAttraction },
+      uDisplacementTexture: { value: cursorTrail.texture },
+      uViewport: { value: new Vector2(window.innerWidth, window.innerHeight) }, uPointerStrength: { value: 0 },
+      uPointerAttraction: { value: HERO_CURSOR_EFFECT.intensity },
       uHeroReveal: { value: ROAD_INTRO.enabled ? 0 : 1 },
       uNavFormation: { value: 0 },
       uNebulaRemaining: { value: Math.max(0, Math.min(100, NAV_CONSTELLATION.nebulaRemainingPercent)) / 100 },
@@ -313,7 +328,13 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     },
     transparent: true,
     depthWrite: false,
-    blending: AdditiveBlending,
+    // Fragment RGB is premultiplied; only formed figures contribute alpha.
+    // The nebula remains additive, figures composite over its moving trail.
+    blending: CustomBlending,
+    blendSrc: OneFactor,
+    blendDst: OneMinusSrcAlphaFactor,
+    blendSrcAlpha: ZeroFactor,
+    blendDstAlpha: OneFactor,
   })
   const connectionPositions = new Float32Array(PARTICLE_CONNECTIONS.maxLines * 2 * 3)
   const connectionAlphas = new Float32Array(PARTICLE_CONNECTIONS.maxLines * 2)
@@ -458,6 +479,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (Array.isArray(nextOrder) && nextOrder.length) orderedSectionIds = [...nextOrder]
   }
   const onRoadReset = (): void => {
+    cursorTrail.reset()
     revealStartedAt = lastElapsed
     formationStartedAt = -1
     formationProgress = 0
@@ -584,8 +606,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         lastFigureLayoutSentAt = -1
       }
       particleMaterial.uniforms.uNebulaRemaining!.value = clamp01(NAV_CONSTELLATION.nebulaRemainingPercent / 100)
-      particleMaterial.uniforms.uPointerRadius!.value = NAV_CONSTELLATION.pointerDistortionRadius
-      particleMaterial.uniforms.uPointerAttraction!.value = NAV_CONSTELLATION.pointerAttraction
+      particleMaterial.uniforms.uPointerAttraction!.value = HERO_CURSOR_EFFECT.intensity
       particleMaterial.uniforms.uNavHoverScale!.value = reducedMotion ? 1 : NAV_CONSTELLATION.hoverScale
       particleMaterial.uniforms.uNavHoverBrightness!.value = NAV_CONSTELLATION.hoverBrightness
       particleMaterial.uniforms.uNavSelectedBrightness!.value = NAV_CONSTELLATION.selectedBrightness
@@ -620,7 +641,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       const ballEntry = smoothstep(ROAD_INTRO.ballEntryStart, ROAD_INTRO.ballEntryEnd, introProgress)
       pointer.smoothX += (pointer.x - pointer.smoothX) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
       pointer.smoothY += (pointer.y - pointer.smoothY) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
-      shaderPointer.set(pointer.smoothX, pointer.smoothY)
       const journeyTargetProgress = clamp01(journeyProgress(state.scroll) + 0.02)
       const introBallStart = Math.max(0, JOURNEY_START - ROAD_INTRO.ballStartProgressOffset)
       const introTargetProgress = introBallStart + (ROAD_INTRO.ballArrivalProgress - introBallStart) * ballEntry
@@ -735,8 +755,12 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         container.dispatchEvent(new CustomEvent('roadfiguresready'))
       }
       const hoverBlend = 1 - Math.exp(-NAV_CONSTELLATION.hoverResponse * Math.min(delta, 0.05))
+      const inHero = visibleDomSection() === 'hero'
+      hoveredFigure = !coarsePointer && pointerInside && inHero
+        ? figureAtClientPoint((pointer.x + 1) * 0.5 * window.innerWidth, (1 - pointer.y) * 0.5 * window.innerHeight)
+        : -1
       for (let index = 0; index < hoverWeights.length; index += 1) {
-        const target = index === selectedFigure ? 1 : 0
+        const target = index === hoveredFigure && inHero ? 1 : 0
         const current = hoverWeights[index] ?? 0
         hoverWeights[index] = current + (target - current) * hoverBlend
       }
@@ -751,7 +775,21 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       particleMaterial.uniforms.uNavHover3!.value = hoverWeights[3]
       particleMaterial.uniforms.uNavHover4!.value = hoverWeights[4]
       particleMaterial.uniforms.uNavSelectedFigure!.value = selectedFigure
-      const distortionTarget = !coarsePointer && !reducedMotion && pointerInside && visibleDomSection() === 'hero' ? 1 : 0
+      const distortionTarget = HERO_CURSOR_EFFECT.enabled && !coarsePointer && !reducedMotion && inHero ? 1 : 0
+      if (distortionTarget > 0) {
+        cursorTrail.update(
+          Math.min(delta, 0.1),
+          (pointer.x + 1) * 0.5 * window.innerWidth,
+          (1 - pointer.y) * 0.5 * window.innerHeight,
+          window.innerWidth, window.innerHeight,
+          HERO_CURSOR_EFFECT.diameter * 0.5, HERO_CURSOR_EFFECT.duration,
+          pointerInside,
+        )
+      } else {
+        // Clear once on disable/hero exit, so re-enabling never revives a stale trail.
+        if (pointerDistortionStrength > 0) cursorTrail.reset()
+        pointerDistortionStrength = 0
+      }
       pointerDistortionStrength += (distortionTarget - pointerDistortionStrength)
         * (1 - Math.exp(-10 * Math.min(delta, 0.05)))
       particleMaterial.uniforms.uPointerStrength!.value = pointerDistortionStrength
@@ -892,6 +930,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
     },
     resize: (width, height) => {
+      cursorTrail.resize(width, height)
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
       particleMaterial.uniforms.uViewport!.value.set(width, height)
       figureLayout = createNavigationLayout(width, height, camera.fov)
@@ -929,6 +968,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
     },
     dispose: () => {
+      cursorTrail.dispose()
       stopGeometryWatch()
       stopLayoutWatch()
       window.removeEventListener('pointermove', onPointerMove)

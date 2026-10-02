@@ -48,7 +48,5 @@ export const NAV_CONSTELLATION = reactive({
   layoutGap: 16,
   figureSize: 0.15,
   figureHitRadius: 58,
-  pointerDistortionRadius: 96,
-  pointerAttraction: 0.16,
   scrollDuration: 1.2,
 })
