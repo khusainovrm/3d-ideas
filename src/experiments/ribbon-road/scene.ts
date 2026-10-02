@@ -760,7 +760,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       roadChoices.update(ballProgress, roadReveal > .95 && visibleDomSection() !== 'hero',
         pointerInside && !coarsePointer ? (pointer.x + 1) * .5 * window.innerWidth : -10000,
         pointerInside && !coarsePointer ? (1 - pointer.y) * .5 * window.innerHeight : -10000,
-        Math.min(delta, .1))
+        Math.min(delta, .1), ball?.position)
       if (container.parentElement && visibleDomSection() !== 'hero') {
         container.parentElement.style.cursor = pointerInside && roadChoices.hitTest(
           (pointer.x + 1) * .5 * window.innerWidth, (1 - pointer.y) * .5 * window.innerHeight,

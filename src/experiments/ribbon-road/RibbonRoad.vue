@@ -166,6 +166,7 @@ import {NAV_CONSTELLATION, ORIGINAL_SECTION_ORDER, ROAD_NAV_SECTIONS, type RoadS
 import {createScrollGate} from './useScrollGate'
 import {HERO_CURSOR_EFFECT} from './cursorEffect'
 import {ROAD_CHOICES} from './roadChoices'
+import {ROAD_CHOICE_PREVIEW} from './roadChoicePreview'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -322,15 +323,37 @@ const {debug, paneHost} = useDebugPane(metrics, {
     features.addBinding(RIBBON_ROAD_FEATURES, 'roadChoices', {label: 'Сферы поворота дороги'})
     const choices = pane.addFolder({title: 'Сферы поворота дороги', expanded: false})
     choices.addBinding(ROAD_CHOICES, 'diameter', {label: 'Диаметр, px', min: 10, max: 40, step: 1})
-    choices.addBinding(ROAD_CHOICES, 'turnAngle', {label: 'Угол поворота, °', min: 5, max: 60, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'turnAngle', {label: 'Влево / вправо, °', min: 5, max: 60, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'upAngle', {label: 'Вверх, °', min: 5, max: 60, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'downAngle', {label: 'Вниз, °', min: 5, max: 60, step: 1})
     choices.addBinding(ROAD_CHOICES, 'turnDuration', {label: 'Поворот, с', min: .2, max: 3, step: .1})
     choices.addBinding(ROAD_CHOICES, 'turnLength', {label: 'Длина перехода', min: .01, max: .12, step: .005})
-    choices.addBinding(ROAD_CHOICES, 'sideGap', {label: 'Отступ от дороги', min: .5, max: 3, step: .1})
+    choices.addBinding(ROAD_CHOICES, 'sideGap', {label: 'Отступ от дороги', min: .5, max: 8, step: .1})
+    choices.addBinding(ROAD_CHOICES, 'verticalGap', {label: 'Шаг по высоте', min: .5, max: 5, step: .1})
+    choices.addBinding(ROAD_CHOICES, 'scatter', {label: 'Разброс', min: 0, max: 2, step: .05})
+    choices.addBinding(ROAD_CHOICES, 'scatterSeed', {label: 'Вариант разброса', min: 0, max: 100, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'opacity', {label: 'Яркость', min: 0, max: 1, step: .05})
+    choices.addBinding(ROAD_CHOICES, 'inactiveOpacity', {label: 'После выбора', min: 0, max: 1, step: .05})
+    choices.addBinding(ROAD_CHOICES, 'hoverScale', {label: 'Рост при наведении', min: 1, max: 2, step: .05})
+    choices.addBinding(ROAD_CHOICES, 'visibilityDistance', {label: 'Дальность появления', min: 10, max: 50, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'visibilityWindow', {label: 'Окно по прогрессу', min: .02, max: .2, step: .005})
     choices.addBinding(ROAD_CHOICES, 'activeColor', {label: 'Активные'})
     choices.addBinding(ROAD_CHOICES, 'inactiveColor', {label: 'Неактивные'})
     for (const section of ROAD_NAV_SECTIONS) {
       choices.addBinding(ROAD_CHOICES.sections, section.id, {label: section.label})
     }
+    const preview = choices.addFolder({title: 'Предпросмотр маршрута', expanded: false})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'enabled', {label: 'Включён'})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'color', {label: 'Цвет'})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'opacity', {label: 'Непрозрачность', min: 0, max: 1, step: .05})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'width', {label: 'Толщина, px', min: .5, max: 6, step: .25})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'fadeIn', {label: 'Появление, с', min: 0, max: 3, step: .05})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'fadeOut', {label: 'Исчезновение, с', min: 0, max: 3, step: .05})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'drawDuration', {label: 'Прокладывание, с', min: 0, max: 5, step: .1})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'length', {label: 'Длина маршрута', min: .05, max: 1, step: .05})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'dashed', {label: 'Форма', options: {'Сплошная': false, 'Пунктир': true}})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'dashSize', {label: 'Длина штриха', min: .05, max: 2, step: .05})
+    preview.addBinding(ROAD_CHOICE_PREVIEW, 'gapSize', {label: 'Промежуток', min: .05, max: 2, step: .05})
     features.addBinding(PARTICLE_CONNECTIONS, 'fadeDuration', {
       label: 'Line fade, sec',
       min: 0.2,

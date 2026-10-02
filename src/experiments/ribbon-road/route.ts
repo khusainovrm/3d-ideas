@@ -3,12 +3,12 @@ import { roadPointValuesAt, type RoadPointValues } from './roadPaths'
 
 export type RibbonSplineType = 'centripetal' | 'catmullrom' | 'chordal'
 
-export const ROAD_WIDTH = 1.825
-export const ROAD_THICKNESS = 0.23
-export const BALL_RADIUS = 0.46
+export const ROAD_WIDTH = 0.4
+export const ROAD_THICKNESS = 0.1
+export const BALL_RADIUS = 0.26
 export const BALL_SURFACE_GAP = -0.01
 export const JOURNEY_START = 0.09
-export const JOURNEY_END = 0.82
+export const JOURNEY_END = 0.95
 
 export type BallShape = 'sphere' | 'faceted' | 'lowPoly'
 
