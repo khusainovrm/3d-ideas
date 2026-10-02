@@ -120,7 +120,9 @@ void main() {
   float heroGlow = mix(1.0, aHeroGlow, heroAmount);
   // The reference is photographic dust: most hero grains are close to one
   // physical pixel, while only the three terminal nodes get a larger halo.
-  float heroSize = aHeroSize * 0.6;
+  // Project local-space cloud splats (intro scale .42, vertical FOV 46°).
+  // Coverage stays continuous on resize and across quality levels.
+  float heroSize = aHeroSize * uViewport.y * 0.017668;
   float particleSize = mix(aSize, heroSize, heroAmount);
   particleSize = mix(particleSize, navStyle.y, figureProgress);
   particleSize *= mix(1.0, uNavHoverScale, figureHover * figureProgress);
@@ -142,7 +144,7 @@ void main() {
   float revealedAlpha = particleAlpha * mix(1.0, revealOpacity, heroAmount);
   float styledAlpha = mix(revealedAlpha, min(1.0, navStyle.x), figureProgress);
   vAlpha = uVisibility * styledAlpha * cloudDim * backgroundCopyVisibility;
-  vAccent = step(mix(0.965, 0.997, heroAmount), aSeed) * (1.0 - figureProgress);
+  vAccent = step(0.965, aSeed) * (1.0 - heroAmount) * (1.0 - figureProgress);
   float formedBrightness = mix(1.0, navStyle.z, figureProgress);
   float selectedBrightness = mix(1.0, uNavSelectedBrightness, selectedAmount * figureProgress);
   vNavBrightness = min(2.6, formedBrightness

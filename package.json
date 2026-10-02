@@ -10,6 +10,7 @@
     "dev": "vite",
     "build": "vue-tsc -b && vite build",
     "generate:ribbon-figures": "node scripts/generateParticleFigureTargets.mjs",
+    "generate:ribbon-cloud": "node scripts/generateHeroCloud.mjs",
     "preview": "vite preview",
     "typecheck": "vue-tsc -b"
   },
@@ -22,10 +23,11 @@
     "vue-router": "^4.5.1"
   },
   "devDependencies": {
-    "@types/three": "^0.180.0",
     "@types/pngjs": "^6.0.5",
+    "@types/three": "^0.180.0",
     "@vitejs/plugin-vue": "^6.0.1",
     "pngjs": "^7.0.0",
+    "sharp": "^0.35.5",
     "typescript": "~5.9.2",
     "vite": "^7.1.5",
     "vue-tsc": "^3.0.6"

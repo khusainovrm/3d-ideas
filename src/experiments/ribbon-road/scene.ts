@@ -74,7 +74,7 @@ interface ParticleConnection {
   createdAt: number
 }
 
-const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 16000, medium: 24000, high: 32000 }
+const PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 140000, medium: 240000, high: 360000 }
 const JOURNEY_PARTICLE_COUNTS: Record<QualityLevel, number> = { low: 480, medium: 900, high: 1500 }
 const RIBBON_STEPS: Record<QualityLevel, number> = { low: 150, medium: 240, high: 340 }
 const BALL_SEGMENTS: Record<QualityLevel, number> = { low: 16, medium: 24, high: 32 }
