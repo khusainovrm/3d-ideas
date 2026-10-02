@@ -2,7 +2,6 @@ import gsap from 'gsap'
 import { watch } from 'vue'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
-  AdditiveBlending,
   CustomBlending,
   OneFactor,
   OneMinusSrcAlphaFactor,
@@ -39,6 +38,7 @@ import { generateNavigationFigures } from './navFigures'
 import { createNavigationLayout } from './navLayout'
 import { createCursorTrail } from './cursorTrail'
 import { HERO_CURSOR_EFFECT } from './cursorEffect'
+import { createRoadChoices } from './roadChoices'
 import { NAV_CONSTELLATION, ROAD_NAV_SECTIONS } from './navigation'
 import type { RoadSectionId } from './navigation'
 import { roadPointValuesAt } from './roadPaths'
@@ -192,7 +192,8 @@ const buildParticleGeometry = (count: number, journeyCount: number, quality: Qua
 
 export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const { scene, camera, renderer, container } = runtime
-  let curve = createRoadCurve(roadPointValuesAt(0))
+  const roadChoices = createRoadChoices(scene, camera, createRoadCurve(roadPointValuesAt(0)))
+  const curve = roadChoices.curve
   let activeRoadIndex = 0
   const state = { scroll: 0, hover: 0, pulse: 0 }
   const hoverWeights = new Float32Array(ROAD_NAV_SECTIONS.length)
@@ -427,7 +428,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
   const activateRoad = (roadIndex: number): void => {
     activeRoadIndex = roadIndex
-    curve = createRoadCurve(roadPointValuesAt(roadIndex))
+    roadChoices.setRoad(createRoadCurve(roadPointValuesAt(roadIndex)), roadIndex)
     if (ribbon) {
       ribbon.geometry.dispose()
       ribbon.geometry = createRibbonGeometry(
@@ -479,6 +480,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (Array.isArray(nextOrder) && nextOrder.length) orderedSectionIds = [...nextOrder]
   }
   const onRoadReset = (): void => {
+    roadChoices.reset()
     cursorTrail.reset()
     revealStartedAt = lastElapsed
     formationStartedAt = -1
@@ -505,7 +507,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     rayPointer.set(pointer.x, pointer.y)
     pointerSamplePending = true
     hoveredFigure = figureAtClientPoint(event.clientX, event.clientY)
-    if (container.parentElement) container.parentElement.style.cursor = hoveredFigure >= 0 ? 'pointer' : ''
+    if (container.parentElement) container.parentElement.style.cursor = hoveredFigure >= 0
+      || roadChoices.hitTest(event.clientX, event.clientY) ? 'pointer' : ''
   }
   const onPointerLeave = (): void => {
     pointerInside = false
@@ -547,6 +550,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (event.button !== 0) return
     const target = event.target
     if (target instanceof Element && target.closest('a, button, input, select, textarea')) return
+    if (roadChoices.click(event.clientX, event.clientY)) return
     const figureIndex = figureAtClientPoint(event.clientX, event.clientY)
     const section = ROAD_NAV_SECTIONS[figureIndex]
     if (!section) return
@@ -637,6 +641,29 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
 
       introProgress = introProgressAt(reducedMotion)
+      // DOM order/section heights determine encounters, not the original route order.
+      const scrollStart = scrollTween.scrollTrigger?.start ?? 0
+      const scrollEnd = scrollTween.scrollTrigger?.end ?? 1
+      for (const { id } of ROAD_NAV_SECTIONS) {
+        const element = document.getElementById(id)
+        if (!element) continue
+        const middleY = element.offsetTop + element.offsetHeight * .5
+        const scroll = clamp01((middleY - scrollStart) / Math.max(1, scrollEnd - scrollStart))
+        const handoff = !ROAD_INTRO.enabled || reducedMotion ? 1
+          : smoothstep(introEndScroll, introEndScroll + window.innerHeight * ROAD_INTRO.ballHandoffViewportHeights, middleY)
+        const destination = clamp01(journeyProgress(scroll) + .02)
+        roadChoices.setProgress(id, ROAD_INTRO.ballArrivalProgress + (destination - ROAD_INTRO.ballArrivalProgress) * handoff)
+      }
+      if (roadChoices.animate(elapsed, reducedMotion)) {
+        if (ribbon) {
+          ribbon.geometry.dispose()
+          ribbon.geometry = createRibbonGeometry(curve, RIBBON_STEPS[activeQuality], ROAD_APPEARANCE.width, ROAD_APPEARANCE.thickness)
+        }
+        getRoadFrame(curve, PORTAL_PROGRESS, portalTangent, portalNormal, portalRight)
+        portal.position.copy(curve.getPointAt(PORTAL_PROGRESS)).addScaledVector(
+          portalNormal, ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
+        )
+      }
       const roadReveal = smoothstep(ROAD_INTRO.roadRevealStart, ROAD_INTRO.roadRevealEnd, introProgress)
       const ballEntry = smoothstep(ROAD_INTRO.ballEntryStart, ROAD_INTRO.ballEntryEnd, introProgress)
       pointer.smoothX += (pointer.x - pointer.smoothX) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
@@ -730,6 +757,15 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       lookAt.lerpVectors(introLookAt, journeyLookAt, cameraArrival)
       camera.lookAt(lookAt)
       camera.updateMatrixWorld()
+      roadChoices.update(ballProgress, roadReveal > .95 && visibleDomSection() !== 'hero',
+        pointerInside && !coarsePointer ? (pointer.x + 1) * .5 * window.innerWidth : -10000,
+        pointerInside && !coarsePointer ? (1 - pointer.y) * .5 * window.innerHeight : -10000,
+        Math.min(delta, .1))
+      if (container.parentElement && visibleDomSection() !== 'hero') {
+        container.parentElement.style.cursor = pointerInside && roadChoices.hitTest(
+          (pointer.x + 1) * .5 * window.innerWidth, (1 - pointer.y) * .5 * window.innerHeight,
+        ) ? 'pointer' : ''
+      }
 
       const particlesVisibility = 1 - purplePhase
       const revealProgress = ROAD_INTRO.enabled
@@ -968,6 +1004,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
     },
     dispose: () => {
+      roadChoices.dispose()
       cursorTrail.dispose()
       stopGeometryWatch()
       stopLayoutWatch()

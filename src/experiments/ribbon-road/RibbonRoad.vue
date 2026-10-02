@@ -165,6 +165,7 @@ import {BALL_APPEARANCE, PARTICLE_CONNECTIONS, RIBBON_ROAD_FEATURES, ROAD_APPEAR
 import {NAV_CONSTELLATION, ORIGINAL_SECTION_ORDER, ROAD_NAV_SECTIONS, type RoadSectionId} from './navigation'
 import {createScrollGate} from './useScrollGate'
 import {HERO_CURSOR_EFFECT} from './cursorEffect'
+import {ROAD_CHOICES} from './roadChoices'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -318,6 +319,18 @@ const {debug, paneHost} = useDebugPane(metrics, {
     features.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', {label: 'Cinematic 3D camera'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', {label: 'Horizontal camera follow'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'particleConnections', {label: 'Particle connections'})
+    features.addBinding(RIBBON_ROAD_FEATURES, 'roadChoices', {label: 'Сферы поворота дороги'})
+    const choices = pane.addFolder({title: 'Сферы поворота дороги', expanded: false})
+    choices.addBinding(ROAD_CHOICES, 'diameter', {label: 'Диаметр, px', min: 10, max: 40, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'turnAngle', {label: 'Угол поворота, °', min: 5, max: 60, step: 1})
+    choices.addBinding(ROAD_CHOICES, 'turnDuration', {label: 'Поворот, с', min: .2, max: 3, step: .1})
+    choices.addBinding(ROAD_CHOICES, 'turnLength', {label: 'Длина перехода', min: .01, max: .12, step: .005})
+    choices.addBinding(ROAD_CHOICES, 'sideGap', {label: 'Отступ от дороги', min: .5, max: 3, step: .1})
+    choices.addBinding(ROAD_CHOICES, 'activeColor', {label: 'Активные'})
+    choices.addBinding(ROAD_CHOICES, 'inactiveColor', {label: 'Неактивные'})
+    for (const section of ROAD_NAV_SECTIONS) {
+      choices.addBinding(ROAD_CHOICES.sections, section.id, {label: section.label})
+    }
     features.addBinding(PARTICLE_CONNECTIONS, 'fadeDuration', {
       label: 'Line fade, sec',
       min: 0.2,

@@ -1,4 +1,4 @@
-import { BufferAttribute, BufferGeometry, CatmullRomCurve3, Vector3 } from 'three'
+import { BufferAttribute, BufferGeometry, CatmullRomCurve3, Curve, Vector3 } from 'three'
 import { roadPointValuesAt, type RoadPointValues } from './roadPaths'
 
 export type RibbonSplineType = 'centripetal' | 'catmullrom' | 'chordal'
@@ -54,6 +54,7 @@ export const RIBBON_ROAD_FEATURES = {
   cinematic3DCamera: true,
   horizontalPointerCamera: true,
   particleConnections: false,
+  roadChoices: true,
 }
 
 export const PARTICLE_CONNECTIONS = {
@@ -115,7 +116,7 @@ export const createRoadCurve = (
 )
 
 export const getRoadFrame = (
-  curve: CatmullRomCurve3,
+  curve: Curve<Vector3>,
   progress: number,
   tangent: Vector3,
   normal: Vector3,
@@ -129,7 +130,7 @@ export const getRoadFrame = (
 }
 
 export const createRibbonGeometry = (
-  curve: CatmullRomCurve3,
+  curve: Curve<Vector3>,
   steps: number,
   width = ROAD_WIDTH,
   thickness = ROAD_THICKNESS,
