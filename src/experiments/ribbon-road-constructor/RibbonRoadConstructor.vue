@@ -42,6 +42,7 @@ const copyStatus = ref('')
 const hasDraft = ref(false)
 const draggedIndex = ref(-1)
 const history = ref<RouteNode[][]>([cloneNodes(state.nodes)])
+let skipModeAutosave = false
 let saveTimer = 0
 let statusTimer = 0
 
@@ -54,9 +55,11 @@ const switchRouteKind = (kind: RouteKind): void => {
   window.clearTimeout(saveTimer)
   persistDraft()
   routeDrafts[state.routeKind] = snapshot()
+  skipModeAutosave = true
   state.routeKind = kind
   applySnapshot(routeDrafts[kind] ?? (kind === 'landing' ? landingNodes() : makeDefaultNodes()))
-  if (!routeDrafts[kind] && localStorage.getItem(storageKey())) restoreDraft()
+  // Landing starts from the current source coordinates, not a stale saved route.
+  if (kind === 'road' && !routeDrafts[kind] && localStorage.getItem(storageKey())) restoreDraft()
   if (kind === 'landing') precision.value = 3
   state.selectedIndex = 0; state.progress = 0; state.playing = false
   state.focusNonce++
@@ -357,8 +360,9 @@ const persistDraft = (): void => {
     hasDraft.value = true
 }
 
-watch(() => [state.routeKind, state.nodes, state.camera, state.intro, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
+watch(() => [state.nodes, state.camera, state.intro, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
   window.clearTimeout(saveTimer)
+  if (skipModeAutosave) { skipModeAutosave = false; return }
   saveTimer = window.setTimeout(persistDraft, 450)
 }, { deep: true })
 

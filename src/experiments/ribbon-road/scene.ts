@@ -795,7 +795,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         ) ? 'pointer' : ''
       }
 
-      const particlesVisibility = 1 - purplePhase
+      const particlesVisibility = landingMode && !inHero ? 0 : 1 - purplePhase
+      if (particles) particles.visible = particlesVisibility > 0
       const revealProgress = ROAD_INTRO.enabled
         ? reducedMotion
           ? elapsed - revealStartedAt >= 0.15 ? 1 : 0
@@ -903,7 +904,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
           }))
         }
 
-        const connectionsActive = RIBBON_ROAD_FEATURES.particleConnections
+        const connectionsActive = particlesVisibility > 0 && RIBBON_ROAD_FEATURES.particleConnections
           && !coarsePointer
           && !reducedMotion
           && introProgress <= 0.001
@@ -1021,7 +1022,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         particleState: domSection === 'hero'
           ? 'hero'
           : domSection === 'speakers' ? 'hidden' : domSection,
-        particlesVisible: purplePhase < 0.05,
+        particlesVisible: (!landingMode || domSection === 'hero') && purplePhase < 0.05,
         purplePhase: purplePhase > 0.5,
         ballProgress,
         ballVelocity,
