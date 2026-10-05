@@ -317,6 +317,7 @@ const {debug, paneHost} = useDebugPane(metrics, {
       density.addBinding(NAV_CONSTELLATION.qualityParticleScale, level, {label: level, min: 0.2, max: 1, step: 0.05})
     }
     const features = pane.addFolder({title: 'Feature toggles', expanded: false})
+    features.addBinding(RIBBON_ROAD_FEATURES, 'landingScrollCamera', {label: 'Landing scroll camera'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'cinematic3DCamera', {label: 'Cinematic 3D camera'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'horizontalPointerCamera', {label: 'Horizontal camera follow'})
     features.addBinding(RIBBON_ROAD_FEATURES, 'particleConnections', {label: 'Particle connections'})

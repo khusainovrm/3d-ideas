@@ -10,6 +10,7 @@ import {
 } from '../ribbon-road/route'
 import { roadPointValuesAt } from '../ribbon-road/roadPaths'
 
+export type RouteKind = 'road' | 'landing'
 export type EditorMode = 'edit' | 'preview'
 export type InspectorTab = 'nodes' | 'road' | 'ball' | 'intro' | 'camera' | 'preview' | 'export'
 
@@ -58,6 +59,7 @@ export interface IntroPreviewState {
 }
 
 export interface ConstructorState {
+  routeKind: RouteKind
   nodes: RouteNode[]
   mode: EditorMode
   tab: InspectorTab
@@ -141,7 +143,7 @@ const smoothstep = (start: number, end: number, value: number): number => {
 }
 
 export const getIntroPreviewState = (state: ConstructorState): IntroPreviewState => {
-  if (!state.intro.enabled) return { start: 0, end: 0, progress: 1, roadReveal: 1, ballEntry: 1, ballHandoff: 1 }
+  if (state.routeKind === 'landing' || !state.intro.enabled) return { start: 0, end: 0, progress: 1, roadReveal: 1, ballEntry: 1, ballHandoff: 1 }
   const pageViewportHeights = Math.max(1, state.intro.previewPageViewportHeights)
   const start = state.intro.triggerSectionId
     ? INTRO_SECTION_PROGRESS[state.intro.triggerSectionId] ?? 0
@@ -170,6 +172,7 @@ export const cloneNodes = (nodes: readonly RouteNode[]): RouteNode[] => nodes.ma
 }))
 
 export const createConstructorState = (): ConstructorState => ({
+  routeKind: 'road',
   nodes: makeDefaultNodes(),
   mode: 'edit',
   tab: 'nodes',

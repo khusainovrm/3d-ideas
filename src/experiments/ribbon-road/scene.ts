@@ -1,4 +1,6 @@
 import gsap from 'gsap'
+import { LandingRoadCurve, landingCameraDistance, setLandingCamera } from './landingScrollCamera'
+import type { Curve } from 'three'
 import { watch } from 'vue'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import {
@@ -193,7 +195,11 @@ const buildParticleGeometry = (count: number, journeyCount: number, quality: Qua
 export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const { scene, camera, renderer, container } = runtime
   const roadChoices = createRoadChoices(scene, camera, createRoadCurve(roadPointValuesAt(0)))
-  const curve = roadChoices.curve
+  const landingCurve = new LandingRoadCurve()
+  let landingMode = RIBBON_ROAD_FEATURES.landingScrollCamera
+  let curve: Curve<Vector3> = landingMode ? landingCurve : roadChoices.curve
+  let landingDistance = 14
+  let landingFitDirty = true
   let activeRoadIndex = 0
   const state = { scroll: 0, hover: 0, pulse: 0 }
   const hoverWeights = new Float32Array(ROAD_NAV_SECTIONS.length)
@@ -253,7 +259,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const connectionTo = new Vector3()
   const raycaster = new Raycaster()
   raycaster.params.Points = { threshold: PARTICLE_CONNECTIONS.hoverThreshold }
-  const portalDelta = new Vector3()
   const portalTangent = new Vector3()
   const portalNormal = new Vector3()
   const portalRight = new Vector3()
@@ -429,6 +434,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
   const activateRoad = (roadIndex: number): void => {
     activeRoadIndex = roadIndex
     roadChoices.setRoad(createRoadCurve(roadPointValuesAt(roadIndex)), roadIndex)
+    landingFitDirty = true
     if (ribbon) {
       ribbon.geometry.dispose()
       ribbon.geometry = createRibbonGeometry(
@@ -550,7 +556,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     if (event.button !== 0) return
     const target = event.target
     if (target instanceof Element && target.closest('a, button, input, select, textarea')) return
-    if (roadChoices.click(event.clientX, event.clientY)) return
+    if (!landingMode && roadChoices.click(event.clientX, event.clientY)) return
     const figureIndex = figureAtClientPoint(event.clientX, event.clientY)
     const section = ROAD_NAV_SECTIONS[figureIndex]
     if (!section) return
@@ -593,6 +599,14 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
 
   return {
     update: ({ elapsed, delta, reducedMotion }) => {
+      if (landingMode !== RIBBON_ROAD_FEATURES.landingScrollCamera) {
+        landingMode = RIBBON_ROAD_FEATURES.landingScrollCamera
+        curve = landingMode ? landingCurve : roadChoices.curve
+        activateRoad(activeRoadIndex)
+        camera.fov = 46
+        camera.far = 110
+        camera.updateProjectionMatrix()
+      }
       if (navigationGeometryDirty && particles) {
         const next = buildParticleGeometry(PARTICLE_COUNTS[activeQuality], JOURNEY_PARTICLE_COUNTS[activeQuality], activeQuality)
         particles.geometry.dispose()
@@ -629,6 +643,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
           portalNormal,
           ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
         )
+        landingFitDirty = true
         lastRoadWidth = ROAD_APPEARANCE.width
         lastRoadThickness = ROAD_APPEARANCE.thickness
       }
@@ -654,7 +669,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         const destination = clamp01(journeyProgress(scroll) + .02)
         roadChoices.setProgress(id, ROAD_INTRO.ballArrivalProgress + (destination - ROAD_INTRO.ballArrivalProgress) * handoff)
       }
-      if (roadChoices.animate(elapsed, reducedMotion)) {
+      if (!landingMode && roadChoices.animate(elapsed, reducedMotion)) {
         if (ribbon) {
           ribbon.geometry.dispose()
           ribbon.geometry = createRibbonGeometry(curve, RIBBON_STEPS[activeQuality], ROAD_APPEARANCE.width, ROAD_APPEARANCE.thickness)
@@ -664,7 +679,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
           portalNormal, ROAD_APPEARANCE.thickness / 2 + PURPLE_PORTAL.radius + BALL_SURFACE_GAP,
         )
       }
-      const roadReveal = smoothstep(ROAD_INTRO.roadRevealStart, ROAD_INTRO.roadRevealEnd, introProgress)
+      const roadReveal = landingMode ? smoothstep(0, window.innerHeight * 0.75, window.scrollY) : smoothstep(ROAD_INTRO.roadRevealStart, ROAD_INTRO.roadRevealEnd, introProgress)
       const ballEntry = smoothstep(ROAD_INTRO.ballEntryStart, ROAD_INTRO.ballEntryEnd, introProgress)
       pointer.smoothX += (pointer.x - pointer.smoothX) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
       pointer.smoothY += (pointer.y - pointer.smoothY) * (1 - Math.exp(-2.2 * Math.min(delta, 0.05)))
@@ -675,7 +690,10 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       const ballHandoff = !ROAD_INTRO.enabled || reducedMotion
         ? 1
         : smoothstep(introEndScroll, introEndScroll + handoffDistance, window.scrollY)
-      const targetProgress = introTargetProgress + (journeyTargetProgress - introTargetProgress) * ballHandoff
+      const landingStart = document.getElementById(orderedSectionIds[0] ?? 'road-about')?.offsetTop ?? window.innerHeight
+      const landingProgress = clamp01((window.scrollY - landingStart) / Math.max(1, scrollEnd - landingStart))
+      const targetProgress = landingMode ? landingProgress
+        : introTargetProgress + (journeyTargetProgress - introTargetProgress) * ballHandoff
       const previousProgress = ballProgress
       const damping = reducedMotion ? 18 : state.scroll > 0.78 ? 6.5 : 4.6
       const blend = 1 - Math.exp(-damping * Math.min(delta, 0.05))
@@ -689,27 +707,30 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         ROAD_APPEARANCE.thickness / 2 + BALL_APPEARANCE.radius + BALL_SURFACE_GAP,
       )
       if (ball) {
-        const distance = point.distanceTo(ballPrevious)
+        const distance = landingMode ? (ballProgress - previousProgress) * curve.getLength() : point.distanceTo(ballPrevious)
         rotationAxis.crossVectors(tangent, normal).normalize()
         rotationStep.setFromAxisAngle(rotationAxis, distance / Math.max(0.05, BALL_APPEARANCE.radius))
         ball.quaternion.premultiply(rotationStep)
         ball.position.copy(point)
         ball.scale.setScalar(BALL_APPEARANCE.radius / BALL_RADIUS)
         ballPrevious.copy(point)
-        ball.visible = ballEntry > 0.005
+        ball.visible = landingMode ? roadReveal > 0.005 : ballEntry > 0.005
       }
 
-      const signedPortalDistance = portalDelta.copy(point).sub(portal.position).dot(portalTangent)
+      const inHero = visibleDomSection() === 'hero'
+      // Crossing is ordered along the track, not by a world-space half-plane.
+      // Loops can put the start on the far side of the portal's tangent plane.
+      const signedPortalDistance = (ballProgress - PORTAL_PROGRESS) * curve.getLength()
       const portalEntry = smoothstep(
         -PURPLE_PORTAL.radius * PURPLE_PORTAL.crossingSoftness,
         PURPLE_PORTAL.radius * PURPLE_PORTAL.crossingSoftness,
         signedPortalDistance,
       )
       const portalExit = 1 - smoothstep(ROAD_SECTIONS.speakers[1] - 0.015, ROAD_SECTIONS.registration[0] + 0.055, state.scroll)
-      purplePhase = portalEntry * portalExit
+      purplePhase = inHero ? 0 : portalEntry * portalExit
       background.copy(black).lerp(purple, purplePhase)
       scene.background = background
-      const portalFlash = 1 - smoothstep(PURPLE_PORTAL.radius * 0.18, PURPLE_PORTAL.radius * 1.35, Math.abs(signedPortalDistance))
+      const portalFlash = inHero ? 0 : 1 - smoothstep(PURPLE_PORTAL.radius * 0.18, PURPLE_PORTAL.radius * 1.35, Math.abs(signedPortalDistance))
       violetLight.intensity = purplePhase * 5.2 + portalFlash * 2.4
 
       // The camera must have a single continuous source of truth. Switching
@@ -757,12 +778,19 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       lookAt.lerpVectors(introLookAt, journeyLookAt, cameraArrival)
       camera.lookAt(lookAt)
       camera.updateMatrixWorld()
-      roadChoices.update(ballProgress, roadReveal > .95 && visibleDomSection() !== 'hero',
+      if (landingMode && ribbon) {
+        if (landingFitDirty) {
+          landingDistance = landingCameraDistance(ribbon.geometry, camera.aspect)
+          landingFitDirty = false
+        }
+        setLandingCamera(camera, landingProgress, landingDistance, landingCurve)
+      }
+      roadChoices.update(ballProgress, !landingMode && roadReveal > .95 && visibleDomSection() !== 'hero',
         pointerInside && !coarsePointer ? (pointer.x + 1) * .5 * window.innerWidth : -10000,
         pointerInside && !coarsePointer ? (1 - pointer.y) * .5 * window.innerHeight : -10000,
         Math.min(delta, .1), ball?.position)
       if (container.parentElement && visibleDomSection() !== 'hero') {
-        container.parentElement.style.cursor = pointerInside && roadChoices.hitTest(
+        container.parentElement.style.cursor = !landingMode && pointerInside && roadChoices.hitTest(
           (pointer.x + 1) * .5 * window.innerWidth, (1 - pointer.y) * .5 * window.innerHeight,
         ) ? 'pointer' : ''
       }
@@ -791,7 +819,6 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
         container.dispatchEvent(new CustomEvent('roadfiguresready'))
       }
       const hoverBlend = 1 - Math.exp(-NAV_CONSTELLATION.hoverResponse * Math.min(delta, 0.05))
-      const inHero = visibleDomSection() === 'hero'
       hoveredFigure = !coarsePointer && pointerInside && inHero
         ? figureAtClientPoint((pointer.x + 1) * 0.5 * window.innerWidth, (1 - pointer.y) * 0.5 * window.innerHeight)
         : -1
@@ -944,6 +971,8 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
           connectionAlphaAttribute.needsUpdate = true
         }
       }
+      ribbonMaterial.uniforms.uFadeStrength!.value = landingMode ? 0 : ROAD_VISIBILITY.strength
+      ribbonMaterial.uniforms.uMotion!.value = landingMode ? 0 : reducedMotion ? 0.15 : 1
       ribbonMaterial.uniforms.uTime!.value = elapsed
       ribbonMaterial.uniforms.uPurplePhase!.value = purplePhase
       ribbonMaterial.uniforms.uHover!.value = state.hover
@@ -966,6 +995,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
       }
     },
     resize: (width, height) => {
+      landingFitDirty = true
       cursorTrail.resize(width, height)
       particleMaterial.uniforms.uPixelRatio!.value = renderer.getPixelRatio()
       particleMaterial.uniforms.uViewport!.value.set(width, height)
@@ -976,6 +1006,7 @@ export const createRibbonRoadScene: SceneFactory = (runtime) => {
     },
     setQuality: (quality, profile) => {
       buildQuality(quality)
+      landingFitDirty = true
       particleMaterial.uniforms.uPixelRatio!.value = Math.min(devicePixelRatio, profile.dpr)
     },
     reset: () => window.scrollTo({ top: 0, behavior: runtime.reducedMotion ? 'auto' : 'smooth' }),

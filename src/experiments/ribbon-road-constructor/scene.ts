@@ -19,6 +19,7 @@ import {
   Vector2,
   Vector3,
 } from 'three'
+import { LandingRoadCurve, landingCameraDistance, setLandingCamera, validateLandingPoints } from '../ribbon-road/landingScrollCamera'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js'
 import type { SceneFactory } from '../../three/core/types'
@@ -43,7 +44,10 @@ const smoothstep = (start: number, end: number, value: number): number => {
   const x = clamp01((value - start) / Math.max(0.0001, end - start))
   return x * x * (3 - 2 * x)
 }
-const curveFromNodes = (state: ConstructorState) => createRoadCurve(
+const landingValues = (state: ConstructorState) => state.nodes.map(n => [n.position.x, n.position.y, n.position.z] as const)
+const curveFromNodes = (state: ConstructorState) => state.routeKind === 'landing'
+  ? new LandingRoadCurve(validateLandingPoints(landingValues(state)) ? undefined : landingValues(state))
+  : createRoadCurve(
   state.nodes.map((node) => new Vector3(node.position.x, node.position.y, node.position.z)),
   state.tension,
   state.splineType,
@@ -83,6 +87,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   const portalMaterial = new MeshStandardMaterial({ color: '#7655ff', emissive: '#4d2cc7', emissiveIntensity: 0.75, transparent: true, opacity: 0.76 })
 
   let curve = curveFromNodes(state)
+  let landingDistance = 14
   let road = new Mesh(createRibbonGeometry(curve, state.geometrySteps, state.width, state.thickness), roadMaterial)
   let polygon = new Line(lineGeometry(curve.points), polygonMaterial)
   let spline = new Line(lineGeometry(curve.getPoints(300)), splineMaterial)
@@ -91,6 +96,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   handles.frustumCulled = false
   scene.add(road, polygon, spline, handles)
 
+  const initialBallRadius = state.ballRadius
   const ball = new Mesh(new SphereGeometry(state.ballRadius, 24, 18), ballMaterial)
   scene.add(ball)
   const portal = new Mesh(new SphereGeometry(1, 24, 16), portalMaterial)
@@ -162,7 +168,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
   }
 
   const rebuild = (): void => {
-    curve = curveFromNodes(state)
+    if (state.routeKind !== 'landing' || !validateLandingPoints(landingValues(state))) curve = curveFromNodes(state)
     const dragScale = state.dragging ? 0.5 : 1
     const steps = Math.max(40, Math.round(state.geometrySteps * currentQualityScale * dragScale))
     road.geometry.dispose()
@@ -184,6 +190,7 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
     const portalProgress = state.journeyStart + 0.53 * (state.journeyEnd - state.journeyStart) + 0.02
     portal.position.copy(curve.getPointAt(clamp01(portalProgress)))
     portal.quaternion.setFromUnitVectors(FORWARD, curve.getTangentAt(clamp01(portalProgress)).normalize())
+    landingDistance = landingCameraDistance(road.geometry, camera.aspect)
     lastRevision = state.revision
   }
 
@@ -284,25 +291,28 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
       const journeyTargetProgress = clamp01(state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart) + 0.02)
       const introBallStart = Math.max(0, state.journeyStart - state.intro.ballStartProgressOffset)
       const introTargetProgress = introBallStart + (state.intro.ballArrivalProgress - introBallStart) * intro.ballEntry
-      const targetCurveProgress = state.mode === 'preview' && state.intro.enabled
+      const targetCurveProgress = state.routeKind === 'landing' ? state.progress : state.mode === 'preview' && state.intro.enabled
         ? introTargetProgress + (journeyTargetProgress - introTargetProgress) * intro.ballHandoff
         : journeyTargetProgress
       const ballBlend = state.mode === 'preview' && state.followScroll ? 1 - Math.exp(-state.ballDamping * Math.min(delta, 0.05)) : 1
+      const previousProgress = state.ballProgress
       state.ballProgress += (targetCurveProgress - state.ballProgress) * ballBlend
       getRoadFrame(curve, state.ballProgress, tangent, normal, right)
       point.copy(curve.getPointAt(state.ballProgress)).addScaledVector(normal, state.thickness / 2 + state.ballRadius + state.ballGap)
-      const travelled = point.distanceTo(previousBallPosition)
+      const travelled = state.routeKind === 'landing' ? (state.ballProgress - previousProgress) * curve.getLength() : point.distanceTo(previousBallPosition)
       if (travelled < 4) {
         rotationAxis.crossVectors(tangent, normal).normalize()
         rotationStep.setFromAxisAngle(rotationAxis, travelled / Math.max(0.05, state.ballRadius))
         ball.quaternion.premultiply(rotationStep)
       }
       ball.position.copy(point)
-      ball.scale.setScalar(state.ballRadius / 0.46)
+      ball.scale.setScalar(state.ballRadius / initialBallRadius)
       previousBallPosition.copy(point)
-      ball.visible = state.ballVisible && (state.mode === 'edit' || !state.intro.enabled || intro.ballEntry > 0.005)
+      ball.visible = state.ballVisible && (state.mode === 'edit' || state.routeKind === 'landing' || !state.intro.enabled || intro.ballEntry > 0.005)
 
-      if (state.mode === 'preview') {
+      if (state.mode === 'preview' && state.routeKind === 'landing' && curve instanceof LandingRoadCurve) {
+        setLandingCamera(camera, state.progress, landingDistance, curve)
+      } else if (state.mode === 'preview') {
         const cameraProgress = clamp01(state.ballProgress - 0.02)
         getRoadFrame(curve, cameraProgress, tangent, normal, right)
         cameraTarget.copy(curve.getPointAt(cameraProgress))
@@ -330,7 +340,9 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
         camera.lookAt(desiredLook)
       } else orbit.update()
 
-      camera.fov = state.camera.fov; camera.near = state.camera.near; camera.far = state.camera.far; camera.updateProjectionMatrix()
+      if (state.routeKind !== 'landing' || state.mode === 'edit') {
+        camera.fov = state.camera.fov; camera.near = state.camera.near; camera.far = state.camera.far; camera.updateProjectionMatrix()
+      }
       const roadReveal = state.mode === 'preview' && state.intro.enabled ? intro.roadReveal : 1
       road.visible = state.showRibbon && roadReveal > 0.001
       roadMaterial.opacity = roadReveal
@@ -340,9 +352,10 @@ export const createConstructorScene = (bridge: ConstructorBridge): SceneFactory 
       spline.visible = state.mode === 'edit' && state.showSpline
       grid.visible = state.mode === 'edit' && state.showGrid
       axes.visible = state.mode === 'edit' && state.showAxes
-      portal.visible = state.showPortal && (state.mode === 'edit' || (state.progress > 0.34 && state.progress < 0.68))
+      portal.visible = state.routeKind !== 'landing' && state.showPortal && (state.mode === 'edit' || (state.progress > 0.34 && state.progress < 0.68))
       transformHelper.visible = state.mode === 'edit' && state.selectedIndex >= 0
     },
+    resize: () => { landingDistance = landingCameraDistance(road.geometry, camera.aspect) },
     setQuality: (_quality, profile) => { currentQualityScale = profile.segmentScale; state.revision += 1 },
     reset: () => { state.progress = 0; state.playing = false },
     stats: () => ({

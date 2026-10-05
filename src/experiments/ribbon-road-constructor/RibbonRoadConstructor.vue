@@ -3,6 +3,8 @@ import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { SceneFactory } from '../../three/core/types'
 import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
+import { LANDING_ROAD_POINTS } from '../ribbon-road/landingRoadPath'
+import { validateLandingPoints } from '../ribbon-road/landingScrollCamera'
 import { createConstructorScene } from './scene'
 import { ROAD_INTRO as PRODUCTION_ROAD_INTRO } from '../ribbon-road/route'
 import {
@@ -15,9 +17,10 @@ import {
   type CameraConfig,
   type InspectorTab,
   type RouteNode,
+  type RouteKind,
 } from './model'
 
-const STORAGE_KEY = 'odyssey.ribbon-road-constructor.v1'
+const storageKey = () => state.routeKind === 'landing' ? 'odyssey.ribbon-road-constructor.landing.v1' : 'odyssey.ribbon-road-constructor.v1'
 const tabs: { id: InspectorTab; label: string }[] = [
   { id: 'nodes', label: 'Nodes' }, { id: 'road', label: 'Road' }, { id: 'ball', label: 'Ball' },
   { id: 'intro', label: 'Intro' }, { id: 'camera', label: 'Camera' }, { id: 'preview', label: 'Preview' }, { id: 'export', label: 'Export' },
@@ -42,6 +45,24 @@ const history = ref<RouteNode[][]>([cloneNodes(state.nodes)])
 let saveTimer = 0
 let statusTimer = 0
 
+const routeDrafts: Partial<Record<RouteKind, RouteNode[]>> = {}
+const landingNodes = (): RouteNode[] => LANDING_ROAD_POINTS.map((p, i) => ({ id: `landing-${i}`, position: { x: p[0], y: p[1], z: p[2] } }))
+const routeError = computed(() => state.routeKind === 'landing'
+  ? validateLandingPoints(state.nodes.map(n => [n.position.x, n.position.y, n.position.z] as const)) : '')
+const switchRouteKind = (kind: RouteKind): void => {
+  if (kind === state.routeKind) return
+  window.clearTimeout(saveTimer)
+  persistDraft()
+  routeDrafts[state.routeKind] = snapshot()
+  state.routeKind = kind
+  applySnapshot(routeDrafts[kind] ?? (kind === 'landing' ? landingNodes() : makeDefaultNodes()))
+  if (!routeDrafts[kind] && localStorage.getItem(storageKey())) restoreDraft()
+  if (kind === 'landing') precision.value = 3
+  state.selectedIndex = 0; state.progress = 0; state.playing = false
+  state.focusNonce++
+  history.value = [snapshot()]; state.historyIndex = 0
+  hasDraft.value = Boolean(localStorage.getItem(storageKey()))
+}
 const selectedNode = computed(() => state.nodes[state.selectedIndex])
 const canUndo = computed(() => state.historyIndex > 0)
 const canRedo = computed(() => state.historyIndex < history.value.length - 1)
@@ -51,6 +72,7 @@ const currentSection = computed(() => {
 })
 const introPreview = computed(() => getIntroPreviewState(state))
 const previewCurveProgress = computed(() => {
+  if (state.routeKind === 'landing') return state.progress
   const journey = state.journeyStart + state.progress * (state.journeyEnd - state.journeyStart) + 0.02
   if (!state.intro.enabled) return journey
   const introStart = Math.max(0, state.journeyStart - state.intro.ballStartProgressOffset)
@@ -118,7 +140,7 @@ const insertAfter = (): void => {
     x: (current.position.x + next.position.x) / 2,
     y: (current.position.y + next.position.y) / 2,
     z: (current.position.z + next.position.z) / 2,
-  } : { ...current.position, z: current.position.z - 5 }
+  } : state.routeKind === 'landing' ? { ...current.position, y: current.position.y - 5 } : { ...current.position, z: current.position.z - 5 }
   state.nodes.splice(index + 1, 0, makeNode(position)); state.selectedIndex = index + 1; touch()
 }
 const insertBefore = (): void => {
@@ -130,7 +152,7 @@ const insertBefore = (): void => {
     x: (current.position.x + previous.position.x) / 2,
     y: (current.position.y + previous.position.y) / 2,
     z: (current.position.z + previous.position.z) / 2,
-  } : { ...current.position, z: current.position.z + 5 }
+  } : state.routeKind === 'landing' ? { ...current.position, y: current.position.y + 5 } : { ...current.position, z: current.position.z + 5 }
   state.nodes.splice(index, 0, makeNode(position)); state.selectedIndex = index; touch()
 }
 const appendNode = (): void => {
@@ -156,13 +178,14 @@ const prependNode = (): void => {
   state.selectedIndex = 0; touch()
 }
 const duplicateNode = (): void => {
+  if (state.routeKind === 'landing') { insertAfter(); return }
   const node = selectedNode.value
   if (!node) return
   state.nodes.splice(state.selectedIndex + 1, 0, makeNode({ x: node.position.x + 0.4, y: node.position.y, z: node.position.z - 0.4 }))
   state.selectedIndex += 1; touch()
 }
 const deleteNode = (): void => {
-  if (state.nodes.length <= 4 || state.selectedIndex < 0) return
+  if (state.nodes.length <= (state.routeKind === 'landing' ? 2 : 4) || state.selectedIndex < 0) return
   state.nodes.splice(state.selectedIndex, 1)
   state.selectedIndex = Math.min(state.selectedIndex, state.nodes.length - 1)
   touch()
@@ -188,16 +211,16 @@ const resetIntro = (): void => { Object.assign(state.intro, DEFAULT_INTRO) }
 
 const resetRoute = (): void => {
   if (!window.confirm('Вернуть исходный маршрут Ribbon Road?')) return
-  state.nodes.splice(0, state.nodes.length, ...makeDefaultNodes())
+  state.nodes.splice(0, state.nodes.length, ...(state.routeKind === 'landing' ? landingNodes() : makeDefaultNodes()))
   state.selectedIndex = 4; state.revision += 1; recordHistory()
 }
-const clearDraft = (): void => { localStorage.removeItem(STORAGE_KEY); hasDraft.value = false }
+const clearDraft = (): void => { localStorage.removeItem(storageKey()); hasDraft.value = false }
 const restoreDraft = (): void => {
-  const raw = localStorage.getItem(STORAGE_KEY)
+  const raw = localStorage.getItem(storageKey())
   if (!raw) return
   try {
     const saved = JSON.parse(raw) as { nodes?: RouteNode[]; camera?: CameraConfig; settings?: Partial<typeof state> }
-    if (saved.nodes && saved.nodes.length >= 4) state.nodes.splice(0, state.nodes.length, ...cloneNodes(saved.nodes))
+    if (saved.nodes && saved.nodes.length >= (state.routeKind === 'landing' ? 2 : 4)) state.nodes.splice(0, state.nodes.length, ...cloneNodes(saved.nodes))
     if (saved.camera) Object.assign(state.camera, saved.camera)
     if (saved.settings) {
       if (saved.settings.intro) Object.assign(state.intro, saved.settings.intro)
@@ -206,7 +229,7 @@ const restoreDraft = (): void => {
     }
     state.revision += 1
     history.value = [snapshot()]; state.historyIndex = 0
-  } catch { localStorage.removeItem(STORAGE_KEY) }
+  } catch { localStorage.removeItem(storageKey()) }
 }
 
 const parseImport = (): RouteNode[] => {
@@ -228,12 +251,16 @@ const parseImport = (): RouteNode[] => {
     const matches = [...text.matchAll(/\[\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*,\s*(-?(?:\d+(?:\.\d+)?|\.\d+)(?:e[+-]?\d+)?)\s*\]/gi)]
     values = matches.map((match) => [Number(match[1]), Number(match[2]), Number(match[3])])
   }
-  if (values.length < 4) throw new Error('Нужно минимум четыре корректные точки.')
+  if (values.length < (state.routeKind === 'landing' ? 2 : 4)) throw new Error('Недостаточно точек для маршрута.')
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index]
     if (!value || value.length !== 3 || value.some((number) => !Number.isFinite(number) || Math.abs(number) > 10000)) throw new Error(`Некорректная точка #${index + 1}.`)
     const previous = values[index - 1]
     if (previous && value.every((number, axis) => number === previous[axis])) throw new Error(`Точки #${index} и #${index + 1} совпадают.`)
+  }
+  if (state.routeKind === 'landing') {
+    const error = validateLandingPoints(values as [number, number, number][])
+    if (error) throw new Error(error)
   }
   return values.map((value) => makeNode({ x: value[0]!, y: value[1]!, z: value[2]! }))
 }
@@ -265,7 +292,10 @@ const vectorRows = computed(() => state.nodes.map((node, index) => {
 }))
 const vectorList = computed(() => groupedRows(vectorRows.value))
 const completeCurveCode = computed(() => `const makeCurve = (): CatmullRomCurve3 => new CatmullRomCurve3([\n${vectorList.value}\n], false, '${state.splineType}', ${state.tension.toFixed(2)})`)
-const exportPreview = computed(() => includeWrapper.value ? coordinateArray.value : tupleList.value)
+const landingCode = computed(() => `export const LANDING_ROAD_POINTS: RoadPointValues = ${coordinateArray.value}`)
+const exportError = computed(() => routeError.value || (state.routeKind === 'landing'
+  ? validateLandingPoints(state.nodes.map(n => [Number(formatCoordinate(n.position.x)), Number(formatCoordinate(n.position.y)), Number(formatCoordinate(n.position.z))] as const)) : ''))
+const exportPreview = computed(() => state.routeKind === 'landing' ? landingCode.value : includeWrapper.value ? coordinateArray.value : tupleList.value)
 const cameraCode = computed(() => `const CAMERA_CONFIG = ${JSON.stringify(state.camera, null, 2)}`)
 const introCode = computed(() => {
   const { previewPageViewportHeights: _previewOnly, ...intro } = state.intro
@@ -288,7 +318,7 @@ const copy = async (text: string, label: string): Promise<void> => { await navig
 const downloadJson = (): void => {
   const blob = new Blob([JSON.stringify(state.nodes.map((node) => Object.values(node.position)), null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob); const anchor = document.createElement('a')
-  anchor.href = url; anchor.download = 'ribbon-road-route.json'; anchor.click(); URL.revokeObjectURL(url)
+  anchor.href = url; anchor.download = state.routeKind === 'landing' ? 'landing-road-points.json' : 'ribbon-road-route.json'; anchor.click(); URL.revokeObjectURL(url)
 }
 
 const applyPreset = (preset: string): void => {
@@ -313,10 +343,8 @@ const onKey = (event: KeyboardEvent): void => {
   if (event.code === 'Space') { event.preventDefault(); state.playing = !state.playing }
 }
 
-watch(() => [state.nodes, state.camera, state.intro, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
-  window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({
+const persistDraft = (): void => {
+    localStorage.setItem(storageKey(), JSON.stringify({
       nodes: state.nodes, camera: state.camera,
       settings: {
         width: state.width, thickness: state.thickness, geometrySteps: state.geometrySteps, tension: state.tension, splineType: state.splineType,
@@ -327,12 +355,16 @@ watch(() => [state.nodes, state.camera, state.intro, state.width, state.thicknes
       },
     }))
     hasDraft.value = true
-  }, 450)
+}
+
+watch(() => [state.routeKind, state.nodes, state.camera, state.intro, state.width, state.thickness, state.geometrySteps, state.tension, state.splineType, state.journeyStart, state.journeyEnd, state.ballRadius, state.ballGap, state.ballDamping, state.followScroll, state.showPoints, state.showPolygon, state.showSpline, state.showRibbon, state.showGrid, state.showAxes, state.showPortal, state.selectedIndex], () => {
+  window.clearTimeout(saveTimer)
+  saveTimer = window.setTimeout(persistDraft, 450)
 }, { deep: true })
 
 onMounted(() => {
   document.documentElement.classList.add('constructor-page-active')
-  hasDraft.value = Boolean(localStorage.getItem(STORAGE_KEY))
+  hasDraft.value = Boolean(localStorage.getItem(storageKey()))
   window.addEventListener('keydown', onKey)
 })
 onUnmounted(() => {
@@ -359,6 +391,15 @@ onUnmounted(() => {
     </header>
 
     <aside class="constructor-panel">
+      <div class="panel-body form-stack h-auto">
+        <label>Тип маршрута
+          <select :value="state.routeKind" @change="switchRouteKind(($event.target as HTMLSelectElement).value as RouteKind)">
+            <option value="road">Обычная дорога</option><option value="landing">Лендинг</option>
+          </select>
+        </label>
+        <p v-if="state.routeKind === 'landing'" class="hint">X — изгиб, Y — высота, Z — глубина. Петли и подъёмы разрешены; конец маршрута ниже начала. Preview: вертикальная камера; колесо или timeline — прокрутка.</p>
+        <p v-if="routeError" role="alert">{{ routeError }} До исправления показана последняя корректная кривая.</p>
+      </div>
       <div class="panel-tabs">
         <button v-for="tab in tabs" :key="tab.id" :class="{ active: state.tab === tab.id }" @click="state.tab = tab.id">{{ tab.label }}</button>
       </div>
@@ -377,7 +418,7 @@ onUnmounted(() => {
             <button @click="insertBefore">Insert before</button><button @click="insertAfter">Insert after</button>
             <button @click="duplicateNode">Duplicate</button><button @click="focusSelected">Focus</button>
             <button @click="moveNode(-1)">Move earlier</button><button @click="moveNode(1)">Move later</button>
-            <button class="danger" :disabled="state.nodes.length <= 4" @click="deleteNode">Delete</button>
+            <button class="danger" :disabled="state.nodes.length <= (state.routeKind === 'landing' ? 2 : 4)" @click="deleteNode">Delete</button>
           </div>
         </div>
         <div class="node-list">
@@ -395,10 +436,10 @@ onUnmounted(() => {
         <label>Width <input v-model.number="state.width" type="range" min="0.5" max="6" step="0.05" @input="state.revision++" /><output>{{ state.width.toFixed(2) }}</output></label>
         <label>Thickness <input v-model.number="state.thickness" type="range" min="0.05" max="1" step="0.01" @input="state.revision++" /><output>{{ state.thickness.toFixed(2) }}</output></label>
         <label>Geometry steps <input v-model.number="state.geometrySteps" type="range" min="60" max="500" step="10" @input="state.revision++" /><output>{{ state.geometrySteps }}</output></label>
-        <label>Tension <input v-model.number="state.tension" type="range" min="0" max="1" step="0.05" @input="state.revision++" /><output>{{ state.tension.toFixed(2) }}</output></label>
-        <label>Spline type <select v-model="state.splineType" @change="state.revision++"><option value="centripetal">Centripetal</option><option value="catmullrom">Catmull–Rom</option><option value="chordal">Chordal</option></select></label>
-        <label>Journey start <input v-model.number="state.journeyStart" type="range" min="0" max="0.4" step="0.01" /><output>{{ state.journeyStart.toFixed(2) }}</output></label>
-        <label>Journey end <input v-model.number="state.journeyEnd" type="range" min="0.6" max="1" step="0.01" /><output>{{ state.journeyEnd.toFixed(2) }}</output></label>
+        <label v-if="state.routeKind !== 'landing'">Tension <input v-model.number="state.tension" type="range" min="0" max="1" step="0.05" @input="state.revision++" /><output>{{ state.tension.toFixed(2) }}</output></label>
+        <label v-if="state.routeKind !== 'landing'">Spline type <select v-model="state.splineType" @change="state.revision++"><option value="centripetal">Centripetal</option><option value="catmullrom">Catmull–Rom</option><option value="chordal">Chordal</option></select></label>
+        <label v-if="state.routeKind !== 'landing'">Journey start <input v-model.number="state.journeyStart" type="range" min="0" max="0.4" step="0.01" /><output>{{ state.journeyStart.toFixed(2) }}</output></label>
+        <label v-if="state.routeKind !== 'landing'">Journey end <input v-model.number="state.journeyEnd" type="range" min="0.6" max="1" step="0.01" /><output>{{ state.journeyEnd.toFixed(2) }}</output></label>
         <h3>Helpers</h3>
         <label class="check"><input v-model="state.showPoints" type="checkbox" /> Control points</label>
         <label class="check"><input v-model="state.showPolygon" type="checkbox" /> Control polygon</label>
@@ -420,6 +461,10 @@ onUnmounted(() => {
         <label>Progress <input v-model.number="state.progress" type="range" min="0" max="1" step="0.001" /><output>{{ state.progress.toFixed(3) }}</output></label>
       </div>
 
+      <div v-else-if="state.routeKind === 'landing' && (state.tab === 'intro' || state.tab === 'camera')" class="panel-body">
+        <h2>Камера лендинга</h2><p>Камера движется по Y от первой до последней точки и смотрит вдоль −Z. Дистанция подбирается автоматически с запасом 10% по бокам. Preview показывает путешествие после hero.</p>
+        <button @click="state.mode = 'preview'">Preview</button>
+      </div>
       <div v-else-if="state.tab === 'intro'" class="panel-body form-stack">
         <h2>Intro reveal</h2>
         <label class="check"><input v-model="state.intro.enabled" type="checkbox" /> Hide road before intro</label>
@@ -471,18 +516,23 @@ onUnmounted(() => {
 
       <div v-else class="panel-body form-stack">
         <h2>Export</h2>
+        <p v-if="state.routeKind === 'landing'" class="hint">Замените LANDING_ROAD_POINTS в src/experiments/ribbon-road/landingRoadPath.ts. Этот же массив можно импортировать обратно.</p>
+        <p v-if="exportError" role="alert">{{ exportError }} Увеличьте точность или исправьте точки.</p>
         <label>Precision <select v-model.number="precision"><option :value="1">1 decimal</option><option :value="2">2 decimals</option><option :value="3">3 decimals</option></select></label>
         <label>Points per line <select v-model.number="pointsPerLine"><option :value="1">1</option><option :value="2">2</option><option :value="3">3</option><option :value="5">5</option></select></label>
         <label class="check"><input v-model="trailingComma" type="checkbox" /> Include trailing comma</label>
         <label class="check"><input v-model="includeWrapper" type="checkbox" /> Include array brackets</label>
         <textarea class="code-preview" readonly :value="exportPreview" />
+        <fieldset :disabled="Boolean(exportError)" class="form-stack export-actions">
+        <button v-if="state.routeKind === 'landing'" class="primary" @click="copy(landingCode, 'LANDING_ROAD_POINTS')">Copy LANDING_ROAD_POINTS</button>
         <button class="primary" @click="copy(coordinateArray, 'Coordinate array')">Copy coordinate array</button>
         <button @click="copy(tupleList, 'Tuple list')">Copy tuple list</button>
-        <button @click="copy(completeCurveCode, 'makeCurve')">Copy complete makeCurve()</button>
+        <button v-if="state.routeKind !== 'landing'" @click="copy(completeCurveCode, 'makeCurve')">Copy complete makeCurve()</button>
         <button @click="copy(JSON.stringify(state.nodes.map(node => Object.values(node.position)), null, 2), 'JSON')">Copy JSON</button>
         <button @click="downloadJson">Download JSON</button>
-        <button @click="copy(cameraCode, 'Camera config')">Copy camera config</button>
-        <button @click="copy(introCode, 'ROAD_INTRO')">Copy ROAD_INTRO config</button>
+        <button v-if="state.routeKind !== 'landing'" @click="copy(cameraCode, 'Camera config')">Copy camera config</button>
+        <button v-if="state.routeKind !== 'landing'" @click="copy(introCode, 'ROAD_INTRO')">Copy ROAD_INTRO config</button>
+        </fieldset>
         <p v-if="copyStatus" class="copy-status">{{ copyStatus }}</p>
       </div>
     </aside>
@@ -510,6 +560,7 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.export-actions { border: 0; padding: 0; margin: 0; min-width: 0; }
 .constructor { --bg:#09090a; --panel:#111112ee; --ink:#e9e4dc; --muted:#8d8a84; --line:#323130; --accent:#ff6a13; position:fixed; inset:0; overflow:hidden; color:var(--ink); background:var(--bg); font-family:ui-monospace,'SFMono-Regular',Menlo,monospace; }
 :global(html.constructor-page-active), :global(html.constructor-page-active body) { overflow:hidden; background:#09090a; }
 .constructor__canvas { position:absolute; inset:52px 340px 58px 0; }
@@ -528,6 +579,7 @@ button.danger { color:#ef8e7a; }
 .panel-tabs { display:grid; grid-template-columns:repeat(3,1fr); padding:8px; gap:4px; border-bottom:1px solid var(--line); }
 .panel-tabs button { padding:7px 4px; font-size:9px; text-transform:uppercase; }
 .panel-body { height:calc(100% - 78px); padding:16px; overflow:auto; }
+.panel-body.h-auto { height:auto; }
 .panel-body h2 { margin:0 0 18px; font-size:17px; font-weight:500; }
 .panel-body h3 { margin:24px 0 10px; color:var(--muted); font-size:9px; text-transform:uppercase; letter-spacing:.12em; }
 .panel-heading { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }

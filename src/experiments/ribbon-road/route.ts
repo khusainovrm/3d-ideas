@@ -51,6 +51,7 @@ export const PURPLE_PORTAL = {
  *         two-dimensional Y/Z observation plane.
  */
 export const RIBBON_ROAD_FEATURES = {
+  landingScrollCamera: false,
   cinematic3DCamera: true,
   horizontalPointerCamera: true,
   particleConnections: false,
@@ -123,7 +124,8 @@ export const getRoadFrame = (
   right: Vector3,
 ): void => {
   curve.getTangentAt(Math.max(0, Math.min(1, progress)), tangent).normalize()
-  normal.copy(WORLD_UP).addScaledVector(tangent, -WORLD_UP.dot(tangent))
+  const frameUp = (curve as Curve<Vector3> & { frameUp?: Vector3 }).frameUp ?? WORLD_UP
+  normal.copy(frameUp).addScaledVector(tangent, -frameUp.dot(tangent))
   if (normal.lengthSq() < 0.0001) normal.set(0, 0, 1)
   normal.normalize()
   right.crossVectors(tangent, normal).normalize()
