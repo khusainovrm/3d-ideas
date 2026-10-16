@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { experiments } from '../config/experiments'
+import { experimentPath, experiments } from '../config/experiments'
 </script>
 
 <template>
@@ -27,7 +27,7 @@ import { experiments } from '../config/experiments'
           <ul aria-label="Technologies">
             <li v-for="technology in experiment.technologies" :key="technology">{{ technology }}</li>
           </ul>
-          <RouterLink :to="`/experiments/${experiment.slug}`" :aria-label="`Открыть ${experiment.title}`">
+          <RouterLink :to="experimentPath(experiment)" :aria-label="`Открыть ${experiment.title}`">
             Enter <span>↗</span>
           </RouterLink>
         </footer>

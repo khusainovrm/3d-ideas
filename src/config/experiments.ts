@@ -4,6 +4,7 @@ export type LoadLevel = 'Low' | 'Medium' | 'High'
 
 export interface ExperimentMeta {
   slug: string
+  routePath?: string
   index: string
   title: string
   description: string
@@ -97,7 +98,16 @@ export const experiments = [
     technologies: ['TransformControls', 'Curve editor', 'Live preview'], load: 'Medium',
     component: () => import('../experiments/ribbon-road-constructor/RibbonRoadConstructor.vue'),
   },
+  {
+    slug: 'landing', routePath: '/landing', index: '15', title: 'Particle Landing',
+    description: 'Путешествие камеры от точечного облака к горному ландшафту с реакцией частиц на курсор.',
+    technologies: ['Three.js', 'Image particles', 'Scroll camera'], load: 'High',
+    component: () => import('../experiments/landing/Landing.vue'),
+  },
 ] as const satisfies readonly ExperimentMeta[]
+
+export const experimentPath = (experiment: ExperimentMeta): string =>
+  experiment.routePath ?? `/experiments/${experiment.slug}`
 
 export const getExperiment = (slug: string): ExperimentMeta | undefined =>
   experiments.find((experiment) => experiment.slug === slug)
