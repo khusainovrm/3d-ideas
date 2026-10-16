@@ -13,6 +13,7 @@ import { FpsMonitor } from '../three/core/FpsMonitor'
 export const useThreeScene = (factory: SceneFactory) => {
   const container = ref<HTMLElement | null>(null)
   const paused = ref(false)
+  const qualityMode = ref<QualityLevel | 'auto'>('auto')
   const ready = ref(false)
   const error = shallowRef<string | null>(null)
   const metrics = reactive({
@@ -85,6 +86,11 @@ export const useThreeScene = (factory: SceneFactory) => {
       renderer.setSize(container.value.clientWidth, container.value.clientHeight, false)
     }
     experiment?.setQuality?.(quality, profile)
+  }
+
+  const setQuality = (mode: QualityLevel | 'auto'): void => {
+    qualityMode.value = mode
+    applyQuality(mode === 'auto' ? detectQuality() : mode)
   }
 
   const resize = (): void => {
@@ -163,7 +169,7 @@ export const useThreeScene = (factory: SceneFactory) => {
   onMounted(() => {
     if (!container.value) return
     try {
-      quality = detectQuality()
+      quality = qualityMode.value === 'auto' ? detectQuality() : qualityMode.value
       const profile = QUALITY_PROFILES[quality]
       renderer = new WebGLRenderer({
         antialias: quality !== 'low',
@@ -192,7 +198,9 @@ export const useThreeScene = (factory: SceneFactory) => {
         profile,
         reducedMotion,
       })
-      monitor = new FpsMonitor(() => applyQuality(lowerQuality(quality)))
+      monitor = new FpsMonitor(() => {
+        if (qualityMode.value === 'auto') applyQuality(lowerQuality(quality))
+      })
       observer = new ResizeObserver(resize)
       observer.observe(container.value)
       resize()
@@ -222,6 +230,8 @@ export const useThreeScene = (factory: SceneFactory) => {
     ready,
     error,
     metrics,
+    qualityMode,
+    setQuality,
     togglePause: () => { paused.value = !paused.value },
     reset: () => experiment?.reset?.(),
   }
