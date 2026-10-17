@@ -10,6 +10,11 @@ const images = [
     ['medium', 1600, 95000, 'particles-medium.generated.bin'],
     ['high', 3840, 450000, 'particles-dots3.generated.bin'],
   ] },
+  { source: 'moon path', constant: 'MOON_PATH_PARTICLE_QUALITY', levels: [
+    ['low', 768, 7000, 'moon-path-low.generated.bin'],
+    ['medium', 1600, 20000, 'moon-path-medium.generated.bin'],
+    ['high', 3840, 95000, 'moon-path-high.generated.bin'],
+  ] },
   { source: 'mountans', constant: 'MOUNTAIN_PARTICLE_QUALITY', levels: [
     ['low', 600, 35000, 'mountains-low.generated.bin'],
     ['medium', 1280, 100000, 'mountains-medium.generated.bin'],

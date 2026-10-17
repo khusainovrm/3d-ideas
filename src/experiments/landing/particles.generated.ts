@@ -19,6 +19,26 @@ export const LANDING_PARTICLE_QUALITY = {
     "bytes": 511705
   }
 } as const
+export const MOON_PATH_PARTICLE_QUALITY = {
+  "low": {
+    "width": 768,
+    "height": 427,
+    "count": 5800,
+    "bytes": 7923
+  },
+  "medium": {
+    "width": 1600,
+    "height": 889,
+    "count": 18102,
+    "bytes": 24122
+  },
+  "high": {
+    "width": 3840,
+    "height": 2134,
+    "count": 87569,
+    "bytes": 105000
+  }
+} as const
 export const MOUNTAIN_PARTICLE_QUALITY = {
   "low": {
     "width": 600,

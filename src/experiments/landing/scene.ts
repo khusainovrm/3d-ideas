@@ -1,21 +1,27 @@
-import { BufferAttribute, BufferGeometry, Color, AdditiveBlending, Points, ShaderMaterial, Vector2 } from 'three'
+import { BufferAttribute, BufferGeometry, Color, AdditiveBlending, OrthographicCamera, Points, ShaderMaterial, Vector2 } from 'three'
 import type { SceneFactory } from '../../three/core/types'
 import type { QualityLevel } from '../../three/core/quality'
-import { LANDING_PARTICLE_QUALITY, MOUNTAIN_PARTICLE_QUALITY } from './particles.generated'
+import { LANDING_PARTICLE_QUALITY, MOON_PATH_PARTICLE_QUALITY, MOUNTAIN_PARTICLE_QUALITY } from './particles.generated'
 import lowDataUrl from './particles-low.generated.bin?url'
 import mediumDataUrl from './particles-medium.generated.bin?url'
 import dots3DataUrl from './particles-dots3.generated.bin?url'
+import moonLowUrl from './moon-path-low.generated.bin?url'
+import moonMediumUrl from './moon-path-medium.generated.bin?url'
+import moonHighUrl from './moon-path-high.generated.bin?url'
 import mountainLowUrl from './mountains-low.generated.bin?url'
 import mountainMediumUrl from './mountains-medium.generated.bin?url'
 import mountainHighUrl from './mountains-high.generated.bin?url'
 import { loadParticleData } from './particleData'
+import { createLandingBoat } from './boat'
 import vertexShader from './shaders/particles.vert.glsl?raw'
 import fragmentShader from './shaders/particles.frag.glsl?raw'
 
 const definitions = [
-  { name: 'dots3', metadata: LANDING_PARTICLE_QUALITY,
+  { name: 'dots3', screen: 0, metadata: LANDING_PARTICLE_QUALITY,
     urls: { low: lowDataUrl, medium: mediumDataUrl, high: dots3DataUrl } },
-  { name: 'mountains', metadata: MOUNTAIN_PARTICLE_QUALITY,
+  { name: 'moon path', screen: 0, metadata: MOON_PATH_PARTICLE_QUALITY,
+    urls: { low: moonLowUrl, medium: moonMediumUrl, high: moonHighUrl } },
+  { name: 'mountains', screen: 1, metadata: MOUNTAIN_PARTICLE_QUALITY,
     urls: { low: mountainLowUrl, medium: mountainMediumUrl, high: mountainHighUrl } },
 ] as const
 
@@ -27,7 +33,7 @@ export const createLandingScene = (
   onReady: () => void,
   onError: (cause: Error) => void,
   onLoading: () => void,
-): SceneFactory => ({ scene, camera, renderer, container, quality, reducedMotion }) => {
+): SceneFactory<OrthographicCamera> => ({ scene, camera, renderer, container, quality, reducedMotion }) => {
   scene.background = new Color('#000000')
   camera.position.set(0, 0, 10)
   camera.lookAt(0, 0, 0)
@@ -47,6 +53,10 @@ export const createLandingScene = (
   let pulseAge = 100
   const pulseOrigin = new Vector2()
   const viewport = new Vector2()
+  const boat = createLandingBoat(scene)
+  // Handle a texture error even if particle fetching is still in progress.
+  const boatReady = boat.ready.then(() => null, (cause: unknown) => cause instanceof Error ? cause : new Error('Boat loading failed'))
+  let previousElapsed: number | undefined
 
   const layers = definitions.map((definition) => {
     const geometry = new BufferGeometry()
@@ -78,10 +88,10 @@ export const createLandingScene = (
     camera.position.y = -progress * viewHeight
   }
   const resize = (width: number, height: number): void => {
-    viewHeight = 2 * Math.tan(camera.fov * Math.PI / 360) * camera.position.z
+    viewHeight = camera.top - camera.bottom
     viewWidth = viewHeight * width / Math.max(1, height)
-    for (const [index, { definition, points, material }] of layers.entries()) {
-      points.position.y = -index * viewHeight
+    for (const { definition, points, material } of layers) {
+      points.position.y = -definition.screen * viewHeight
       const { width: w, height: h } = definition.metadata[activeQuality]
       material.uniforms.uScale!.value = Math.max(viewHeight, viewWidth / (w / h))
     }
@@ -121,7 +131,9 @@ export const createLandingScene = (
         }
         return result
       }))
+      const boatError = await boatReady
       if (disposed || request.signal.aborted) return
+      if (boatError) throw boatError
       // Swap both screens together, then release all geometry from the previous level.
       layers.forEach(({ points }, i) => {
         const result = data[i]!
@@ -155,10 +167,12 @@ export const createLandingScene = (
       const response = 1 - Math.exp(-delta * 13)
       pointer.lerp(target, response)
       pointerActive += (targetActive - pointerActive) * response
-      if (pulseAge < 100) pulseAge += delta
+      const motionDelta = previousElapsed === undefined ? delta : Math.min(0.1, Math.max(0, elapsed - previousElapsed))
+      previousElapsed = elapsed
+      if (pulseAge < 100) pulseAge += motionDelta
       renderer.getDrawingBufferSize(viewport)
-      layers.forEach(({ definition, points, material }, i) => {
-        points.visible = loaded && (i === 0 ? progress < 1 : progress > 0)
+      layers.forEach(({ definition, points, material }) => {
+        points.visible = loaded && (definition.screen === 0 ? progress < 1 : progress > 0)
         material.uniforms.uPointer!.value.set(pointer.x, pointer.y + camera.position.y - points.position.y)
         material.uniforms.uPulseOrigin!.value.set(pulseOrigin.x, pulseOrigin.y - points.position.y)
         material.uniforms.uPointerActive!.value = pointerActive
@@ -173,10 +187,20 @@ export const createLandingScene = (
         material.uniforms.uBrightness!.value = landingControls.brightness
         material.uniforms.uMotion!.value = reducedMotion ? 0 : landingControls.motion
       })
+      const moon = layers.find((layer) => layer.definition.name === 'moon path')!
+      const moonMetadata = moon.definition.metadata[activeQuality]
+      boat.update(motionDelta, moon.material.uniforms.uScale!.value, moonMetadata.width / moonMetadata.height,
+        loaded && progress < 1, {
+          time: reducedMotion ? 0 : elapsed,
+          pointerX: pointer.x, pointerY: pointer.y + camera.position.y, pointerActive,
+          radius: landingControls.radius, force: landingControls.force, ripple: landingControls.ripple,
+          pulseX: pulseOrigin.x, pulseY: pulseOrigin.y, pulseAge: reducedMotion ? 100 : pulseAge,
+        }, reducedMotion)
     },
     resize,
     setQuality: (next) => { void selectQuality(next) },
     reset: () => {
+      boat.reset()
       targetActive = 0
       pointerActive = 0
       pulseAge = 100
@@ -191,6 +215,7 @@ export const createLandingScene = (
     dispose: () => {
       disposed = true
       loading?.abort()
+      boat.dispose()
       window.removeEventListener('scroll', syncScroll)
       container.removeEventListener('pointermove', placePointer)
       container.removeEventListener('pointerleave', onPointerLeave)

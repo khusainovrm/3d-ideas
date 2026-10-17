@@ -1,4 +1,4 @@
-import type { Clock, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
+import type { Clock, OrthographicCamera, PerspectiveCamera, Scene, WebGLRenderer } from 'three'
 import type { QualityLevel, QualityProfile } from './quality'
 
 export interface FrameInfo {
@@ -43,10 +43,10 @@ export interface SceneStats {
   cameraTarget?: string
 }
 
-export interface ThreeRuntime {
+export interface ThreeRuntime<TCamera extends PerspectiveCamera | OrthographicCamera = PerspectiveCamera> {
   renderer: WebGLRenderer
   scene: Scene
-  camera: PerspectiveCamera
+  camera: TCamera
   clock: Clock
   container: HTMLElement
   quality: QualityLevel
@@ -63,4 +63,5 @@ export interface ExperimentScene {
   dispose(): void
 }
 
-export type SceneFactory = (runtime: ThreeRuntime) => ExperimentScene
+export type SceneFactory<TCamera extends PerspectiveCamera | OrthographicCamera = PerspectiveCamera> =
+  (runtime: ThreeRuntime<TCamera>) => ExperimentScene

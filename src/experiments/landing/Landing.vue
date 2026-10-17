@@ -4,6 +4,7 @@ import { RouterLink } from 'vue-router'
 import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
 import { createLandingScene, landingControls } from './scene'
+import { boatControls } from './boat'
 
 const particlesReady = ref(false)
 const particleError = ref<string | null>(null)
@@ -11,7 +12,7 @@ const { container, ready, error, metrics, qualityMode, setQuality } = useThreeSc
   () => { particlesReady.value = true },
   (cause) => { particleError.value = cause.message },
   () => { particlesReady.value = false; particleError.value = null },
-))
+), 'orthographic')
 const { paneHost, debug, toggleDebug } = useDebugPane(metrics, {
   title: 'Particle field',
   setup: (pane) => {
@@ -27,6 +28,12 @@ const { paneHost, debug, toggleDebug } = useDebugPane(metrics, {
     pane.addBinding(landingControls, 'pointSize', { min: 0.5, max: 4, label: 'Point size' })
     pane.addBinding(landingControls, 'brightness', { min: 0.2, max: 2, label: 'Brightness' })
     pane.addBinding(landingControls, 'motion', { min: 0, max: 1, label: 'Idle motion' })
+    const boatPane = pane.addFolder({ title: 'Boat', expanded: false })
+    boatPane.addBinding(boatControls, 'visible', { label: 'Visible' })
+    boatPane.addBinding(boatControls, 'height', { min: 0.08, max: 0.3, label: 'Size' })
+    boatPane.addBinding(boatControls, 'response', { min: 0, max: 2, label: 'Storm response' })
+    boatPane.addBinding(boatControls, 'x', { min: 0, max: 1, label: 'Position X' })
+    boatPane.addBinding(boatControls, 'y', { min: 0, max: 1, label: 'Position Y' })
   },
 })
 defineExpose({ container, paneHost })

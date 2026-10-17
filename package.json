@@ -12,6 +12,7 @@
     "generate:ribbon-figures": "node scripts/generateParticleFigureTargets.mjs",
     "generate:ribbon-cloud": "node scripts/generateHeroCloud.mjs",
     "generate:landing-particles": "node scripts/generateLandingParticles.mjs",
+    "generate:landing-boat": "node scripts/generateLandingBoat.mjs",
     "preview": "vite preview",
     "typecheck": "vue-tsc -b"
   },

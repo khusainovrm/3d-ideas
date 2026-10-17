@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted, reactive, ref, shallowRef } from 'vue'
 import {
   Clock,
+  OrthographicCamera,
   PerspectiveCamera,
   Scene,
   WebGLRenderer,
@@ -10,7 +11,19 @@ import type { ExperimentScene, SceneFactory } from '../three/core/types'
 import { detectQuality, lowerQuality, QUALITY_PROFILES, type QualityLevel } from '../three/core/quality'
 import { FpsMonitor } from '../three/core/FpsMonitor'
 
-export const useThreeScene = (factory: SceneFactory) => {
+export function useThreeScene(factory: SceneFactory, cameraType?: 'perspective'): ReturnType<typeof createThreeScene>
+export function useThreeScene(factory: SceneFactory<OrthographicCamera>, cameraType: 'orthographic'): ReturnType<typeof createThreeScene>
+export function useThreeScene(
+  factory: SceneFactory | SceneFactory<OrthographicCamera>,
+  cameraType: 'perspective' | 'orthographic' = 'perspective',
+) {
+  return createThreeScene(factory, cameraType)
+}
+
+function createThreeScene(
+  factory: SceneFactory | SceneFactory<OrthographicCamera>,
+  cameraType: 'perspective' | 'orthographic',
+) {
   const container = ref<HTMLElement | null>(null)
   const paused = ref(false)
   const qualityMode = ref<QualityLevel | 'auto'>('auto')
@@ -69,7 +82,7 @@ export const useThreeScene = (factory: SceneFactory) => {
   let resizeFrame = 0
   let observer: ResizeObserver | undefined
   let monitor: FpsMonitor | undefined
-  let camera: PerspectiveCamera | undefined
+  let camera: PerspectiveCamera | OrthographicCamera | undefined
   let clock: Clock | undefined
   let quality: QualityLevel = 'low'
   let frameIndex = 0
@@ -99,7 +112,14 @@ export const useThreeScene = (factory: SceneFactory) => {
     resizeFrame = requestAnimationFrame(() => {
       if (!renderer || !camera || !container.value) return
       const { clientWidth: width, clientHeight: height } = container.value
-      camera.aspect = width / Math.max(1, height)
+      if (camera instanceof PerspectiveCamera) {
+        camera.aspect = width / Math.max(1, height)
+      } else {
+        const halfHeight = (camera.top - camera.bottom) / 2
+        const halfWidth = halfHeight * width / Math.max(1, height)
+        camera.left = -halfWidth
+        camera.right = halfWidth
+      }
       camera.updateProjectionMatrix()
       renderer.setSize(width, height, false)
       renderer.setPixelRatio(Math.min(window.devicePixelRatio, QUALITY_PROFILES[quality].dpr))
@@ -184,11 +204,14 @@ export const useThreeScene = (factory: SceneFactory) => {
       container.value.appendChild(renderer.domElement)
 
       rendererScene = new Scene()
-      camera = new PerspectiveCamera(48, 1, 0.05, 500)
+      const viewHeight = 2 * Math.tan(48 * Math.PI / 360) * 10
+      camera = cameraType === 'orthographic'
+        ? new OrthographicCamera(-viewHeight / 2, viewHeight / 2, viewHeight / 2, -viewHeight / 2, 0.05, 500)
+        : new PerspectiveCamera(48, 1, 0.05, 500)
       clock = new Clock()
       metrics.quality = quality
       metrics.dpr = renderer.getPixelRatio()
-      experiment = factory({
+      experiment = (factory as SceneFactory<PerspectiveCamera | OrthographicCamera>)({
         renderer,
         scene: rendererScene,
         camera,
