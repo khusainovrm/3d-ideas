@@ -154,7 +154,9 @@ export const createLandingScene = (
     syncScroll()
   }
   resize(container.clientWidth, container.clientHeight)
-  window.addEventListener('scroll', syncScroll, { passive: true })
+  let scrollDirty = false
+  const onScroll = () => { scrollDirty = true }
+  window.addEventListener('scroll', onScroll, { passive: true })
 
   const placePointer = (event: PointerEvent): void => {
     const rect = container.getBoundingClientRect()
@@ -162,16 +164,41 @@ export const createLandingScene = (
       viewHeight / 2 - (event.clientY - rect.top) / rect.height * viewHeight)
     targetActive = 1
   }
+  let touchStart: { id: number; x: number; y: number; time: number } | undefined
   const onPointerLeave = (): void => { targetActive = 0 }
+  const onPointerMove = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') {
+      if (touchStart && Math.hypot(event.clientX - touchStart.x, event.clientY - touchStart.y) > 10) touchStart = undefined
+      return
+    }
+    placePointer(event)
+  }
   const onPointerDown = (event: PointerEvent): void => {
+    if (event.pointerType === 'touch') {
+      touchStart = { id: event.pointerId, x: event.clientX, y: event.clientY, time: event.timeStamp }
+      targetActive = 0
+      return
+    }
     placePointer(event)
     pulseOrigin.set(target.x, target.y + camera.position.y)
     pulseAge = 0
   }
-  container.addEventListener('pointermove', placePointer, { passive: true })
+  const onPointerUp = (event: PointerEvent): void => {
+    const start = touchStart
+    touchStart = undefined
+    if (!start || start.id !== event.pointerId || event.timeStamp - start.time > 500
+      || Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) return
+    placePointer(event)
+    targetActive = 0
+    pulseOrigin.set(target.x, target.y + camera.position.y)
+    pulseAge = 0
+  }
+  const onPointerCancel = (): void => { touchStart = undefined; targetActive = 0 }
+  container.addEventListener('pointermove', onPointerMove, { passive: true })
   container.addEventListener('pointerleave', onPointerLeave)
   container.addEventListener('pointerdown', onPointerDown)
-  container.addEventListener('pointercancel', onPointerLeave)
+  container.addEventListener('pointerup', onPointerUp)
+  container.addEventListener('pointercancel', onPointerCancel)
 
   const selectQuality = async (next: QualityLevel): Promise<void> => {
     loading?.abort()
@@ -223,7 +250,9 @@ export const createLandingScene = (
   void selectQuality(quality)
 
   return {
+    updateEveryFrame: true,
     update: ({ elapsed, delta }) => {
+      if (scrollDirty) { syncScroll(); scrollDirty = false }
       scene.visible = stageVisible
       if (!stageVisible) return
       const response = 1 - Math.exp(-delta * 13)
@@ -292,11 +321,12 @@ export const createLandingScene = (
       boat.dispose()
       goldenThread.dispose()
       mountainShines.dispose()
-      window.removeEventListener('scroll', syncScroll)
-      container.removeEventListener('pointermove', placePointer)
+      window.removeEventListener('scroll', onScroll)
+      container.removeEventListener('pointermove', onPointerMove)
       container.removeEventListener('pointerleave', onPointerLeave)
       container.removeEventListener('pointerdown', onPointerDown)
-      container.removeEventListener('pointercancel', onPointerLeave)
+      container.removeEventListener('pointerup', onPointerUp)
+      container.removeEventListener('pointercancel', onPointerCancel)
       for (const { points, material } of layers) {
         scene.remove(points)
         points.geometry.dispose()

@@ -137,7 +137,7 @@ function createThreeScene(
     if (!paused.value) {
       frameIndex += 1
       const profile = QUALITY_PROFILES[quality]
-      if (frameIndex % profile.updateStride === 0) {
+      if (experiment.updateEveryFrame || frameIndex % profile.updateStride === 0) {
         experiment.update({ elapsed: clock.elapsedTime, delta: rawDelta, reducedMotion })
       }
       renderer.render(rendererScene, camera)

@@ -55,6 +55,8 @@ export interface ThreeRuntime<TCamera extends PerspectiveCamera | OrthographicCa
 }
 
 export interface ExperimentScene {
+  /** Keep scroll-driven uniforms in sync with rendering even on low quality. */
+  updateEveryFrame?: boolean
   update(frame: FrameInfo): void
   resize?(width: number, height: number): void
   setQuality?(quality: QualityLevel, profile: QualityProfile): void

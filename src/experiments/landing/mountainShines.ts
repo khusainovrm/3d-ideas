@@ -102,7 +102,7 @@ export function createMountainShines(scene: Scene, container: HTMLElement, reduc
         const y = (0.5 - position.y / height - progress) * pixelHeight
         const shown = ready && visible && x > 24 && x < pixelWidth - 24 && y > 24 && y < pixelHeight - 24
         mesh.visible = shown
-        button.hidden = !shown
+        if (button.hidden === shown) button.hidden = !shown
         if (!shown && selected === index) select(-1)
         const frozen = reducedMotion || hovered || focused || selected === index
         const pulse = frozen ? 1 : 1 + 0.075 * Math.sin(time * 1.5 + index * 1.9)
@@ -110,8 +110,12 @@ export function createMountainShines(scene: Scene, container: HTMLElement, reduc
         mesh.position.copy(position)
         mesh.scale.setScalar(size * width / pixelWidth * pulse)
         material.opacity = frozen ? 1 : 0.86 + 0.14 * Math.sin(time * 1.8 + index * 2.3)
-        button.style.left = `${x}px`
-        button.style.top = `${y}px`
+        // Idle shimmer only changes the mesh; don't invalidate DOM layout for it.
+        if (shown) {
+          const left = `${x}px`, top = `${y}px`
+          if (button.style.left !== left) button.style.left = left
+          if (button.style.top !== top) button.style.top = top
+        }
         if (selected === index) {
           const left = Math.max(12, Math.min(pixelWidth - tooltip.offsetWidth - 12, x + 22))
           let top = y + 22

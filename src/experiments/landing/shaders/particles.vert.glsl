@@ -22,20 +22,29 @@ varying float vHalfSize;
 void main() {
   vec2 rest = position.xy * uScale;
   vec2 p = rest;
-  vec2 offset = rest - uPointer;
-  float distanceToPointer = length(offset);
-  vec2 direction = offset / max(distanceToPointer, 0.001);
-  float falloff = exp(-pow(distanceToPointer / max(uRadius, 0.01), 2.0) * 1.6) * uPointerActive;
+  // Uniform branches skip the entire storm calculation while scrolling/idle.
+  float falloff = 0.0;
+  float pulse = 0.0;
   float phase = aPhase * 6.283185;
-  float ripple = sin(distanceToPointer * 8.0 - uTime * 7.0 + phase * 0.22);
-  p += direction * falloff * uForce * (0.54 + 0.46 * ripple * uRipple);
-  p += vec2(-direction.y, direction.x) * falloff * uForce * 0.22 * sin(uTime * 2.0 + phase);
-  p += vec2(sin(uTime * 0.6 + phase), cos(uTime * 0.48 + phase)) * uMotion * 0.028;
-
-  float ring = length(rest - uPulseOrigin);
-  float pulseRadius = uPulseAge * 3.2;
-  float pulse = exp(-pow((ring - pulseRadius) / 0.28, 2.0)) * exp(-uPulseAge * 0.65);
-  p += normalize(rest - uPulseOrigin + vec2(0.0001)) * pulse * uForce * 0.8;
+  if (uPointerActive > 0.001) {
+    vec2 offset = rest - uPointer;
+    float distanceToPointer = length(offset);
+    vec2 direction = offset / max(distanceToPointer, 0.001);
+    float normalizedDistance = distanceToPointer / max(uRadius, 0.01);
+    falloff = exp(-normalizedDistance * normalizedDistance * 1.6) * uPointerActive;
+    float ripple = sin(distanceToPointer * 8.0 - uTime * 7.0 + phase * 0.22);
+    p += direction * falloff * uForce * (0.54 + 0.46 * ripple * uRipple);
+    p += vec2(-direction.y, direction.x) * falloff * uForce * 0.22 * sin(uTime * 2.0 + phase);
+  }
+  if (uMotion != 0.0) {
+    p += vec2(sin(uTime * 0.6 + phase), cos(uTime * 0.48 + phase)) * uMotion * 0.028;
+  }
+  if (uPulseAge < 12.0) {
+    float ring = length(rest - uPulseOrigin);
+    float normalizedRing = (ring - uPulseAge * 3.2) / 0.28;
+    pulse = exp(-normalizedRing * normalizedRing) * exp(-uPulseAge * 0.65);
+    p += normalize(rest - uPulseOrigin + vec2(0.0001)) * pulse * uForce * 0.8;
+  }
 
   vLight = aLight;
   vInfluence = clamp(falloff * 0.65 + pulse, 0.0, 1.0);
