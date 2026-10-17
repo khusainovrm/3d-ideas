@@ -5,6 +5,7 @@ import { useThreeScene } from '../../composables/useThreeScene'
 import { useDebugPane } from '../../composables/useDebugPane'
 import { createLandingScene, landingControls } from './scene'
 import { boatControls } from './boat'
+import { ballControls, ballState, threadControls } from './goldenThread'
 
 const particlesReady = ref(false)
 const particleError = ref<string | null>(null)
@@ -34,6 +35,21 @@ const { paneHost, debug, toggleDebug } = useDebugPane(metrics, {
     boatPane.addBinding(boatControls, 'response', { min: 0, max: 2, label: 'Storm response' })
     boatPane.addBinding(boatControls, 'x', { min: 0, max: 1, label: 'Position X' })
     boatPane.addBinding(boatControls, 'y', { min: 0, max: 1, label: 'Position Y' })
+    const ballPane = pane.addFolder({ title: 'Шар', expanded: true })
+    ballPane.addBinding(ballControls, 'visible', { label: 'Видимость' })
+    ballPane.addBinding(ballControls, 'size', { min: 0.5, max: 1.5, step: 0.05, label: 'Размер' })
+    ballPane.addBinding(ballControls, 'startX', { min: -0.15, max: 0.15, step: 0.005, label: 'Старт: сдвиг X' })
+    ballPane.addBinding(ballControls, 'startY', { min: -0.1, max: 0.1, step: 0.005, label: 'Старт: сдвиг Y' })
+    for (const axis of ['x', 'y', 'z'] as const) {
+      ballPane.addBinding(ballState, axis, { readonly: true, format: value => value.toFixed(3), label: `Позиция ${axis.toUpperCase()}` })
+    }
+    ballPane.addBinding(ballState, 'progress', { readonly: true, min: 0, max: 1, label: 'Прогресс' })
+    const threadPane = pane.addFolder({ title: 'Дорожка', expanded: true })
+    threadPane.addBinding(threadControls, 'visible', { label: 'Видимость' })
+    threadPane.addBinding(threadControls, 'width', { min: 0.3, max: 3, step: 0.1, label: 'Толщина' })
+    threadPane.addBinding(threadControls, 'endX', { min: 0.08, max: 0.6, step: 0.01, label: 'Конец: X' })
+    threadPane.addBinding(threadControls, 'shimmer', { min: 0, max: 2, step: 0.1, label: 'Мерцание' })
+    threadPane.addBinding(threadControls, 'showFull', { label: 'Весь путь' })
   },
 })
 defineExpose({ container, paneHost })
@@ -67,7 +83,7 @@ defineExpose({ container, paneHost })
 .landing__hint { position: absolute; z-index: 2; left: clamp(20px, 3vw, 48px); bottom: 28px; pointer-events: none; font: 10px ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .14em; color: rgba(230,237,240,.55); }
 .landing__debug-toggle { position: absolute; z-index: 3; right: clamp(20px, 3vw, 48px); bottom: 20px; border: 1px solid rgba(255,255,255,.3); border-radius: 999px; background: rgba(0,0,0,.6); color: #e6edf0; padding: 9px 14px; cursor: pointer; font: 10px ui-monospace, Menlo, monospace; text-transform: uppercase; letter-spacing: .1em; }
 .landing__debug-toggle:hover { border-color: white; }
-.landing__debug { position: absolute; z-index: 4; right: 20px; top: 64px; width: 260px; }
+.landing__debug { position: absolute; z-index: 4; right: 20px; top: 64px; width: 280px; max-height: calc(100svh - 130px); overflow-y: auto; }
 .landing__status { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; font: 12px ui-monospace, Menlo, monospace; letter-spacing: .12em; color: #aaa; }
 .landing__status--error { color: #da8e7f; }
 @media (max-width: 600px) { .landing__header span { display: none; } .landing__hint { max-width: 12rem; line-height: 1.6; } }

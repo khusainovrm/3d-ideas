@@ -1,0 +1,8 @@
+.landing-shines { position: absolute; inset: 0; pointer-events: none; z-index: 1; }
+.landing-shine-hit { position: absolute; width: 48px; height: 44px; transform: translate(-50%, -50%); border: 0; padding: 0; border-radius: 50%; background: transparent; cursor: pointer; pointer-events: auto; -webkit-tap-highlight-color: transparent; }
+.landing-shine-hit:focus-visible { outline: 1px solid #ebc36b; outline-offset: 3px; }
+.landing-shine-tooltip { position: absolute; box-sizing: border-box; width: min(260px, calc(100% - 24px)); padding: 18px 34px 18px 18px; border: 1px solid rgba(213, 164, 61, .55); border-radius: 12px; background: rgba(22, 16, 9, .96); box-shadow: 0 8px 32px #0008; color: #f5e6c5; font: 14px/1.5 system-ui, sans-serif; pointer-events: auto; z-index: 2; }
+.landing-shine-tooltip strong { font-size: 14px; font-weight: 600; }
+.landing-shine-tooltip p { margin: 8px 0 0; color: #c7bba5; font-size: 13px; }
+.landing-shine-close { position: absolute; top: 4px; right: 4px; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: #f5e6c5; font-size: 22px; cursor: pointer; }
+.landing-shine-close:hover { background: #ffffff12; }

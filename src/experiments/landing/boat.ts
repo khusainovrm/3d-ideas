@@ -6,10 +6,21 @@ import { BoatMotion, type WaterInteraction } from './boatMotion'
 
 export const boatControls = {
   visible: true,
-  x: 0.805,
-  y: 0.9,
+  x: 0.85,
+  y: 0.85,
   height: 0.18,
   response: 1.0,
+}
+
+export function landingBoatLayout(imageScale: number, imageAspect: number, viewWidth: number) {
+  const height = boatControls.height * imageScale
+  const margin = height * (BOAT_IMAGE.width / BOAT_IMAGE.height) * 0.6
+  const limit = Math.max(0, viewWidth / 2 - margin)
+  return {
+    x: Math.max(-limit, Math.min(limit, (boatControls.x - 0.5) * imageAspect * imageScale)),
+    y: (0.5 - boatControls.y) * imageScale,
+    height,
+  }
 }
 
 export function createLandingBoat(scene: Scene) {
@@ -39,10 +50,8 @@ export function createLandingBoat(scene: Scene) {
   return {
     ready,
     update(delta: number, imageScale: number, imageAspect: number, visible: boolean,
-      water: WaterInteraction, reducedMotion: boolean) {
-      const anchorX = (boatControls.x - 0.5) * imageAspect * imageScale
-      const anchorY = (0.5 - boatControls.y) * imageScale
-      const height = boatControls.height * imageScale
+      water: WaterInteraction, reducedMotion: boolean, viewWidth: number) {
+      const { x: anchorX, y: anchorY, height } = landingBoatLayout(imageScale, imageAspect, viewWidth)
       motion.update(delta, anchorX, anchorY, height * aspect, water, boatControls.response, reducedMotion)
       group.visible = textureReady && visible && boatControls.visible
       group.position.set(anchorX + motion.x, anchorY + motion.y, 0.15)

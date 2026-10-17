@@ -12,7 +12,10 @@ import mountainLowUrl from './mountains-low.generated.bin?url'
 import mountainMediumUrl from './mountains-medium.generated.bin?url'
 import mountainHighUrl from './mountains-high.generated.bin?url'
 import { loadParticleData } from './particleData'
-import { createLandingBoat } from './boat'
+import { createLandingBoat, landingBoatLayout } from './boat'
+import { createGoldenThread } from './goldenThread'
+import { createMountainShines } from './mountainShines'
+import { mountainFrame } from './mountainComposition'
 import vertexShader from './shaders/particles.vert.glsl?raw'
 import fragmentShader from './shaders/particles.frag.glsl?raw'
 
@@ -54,8 +57,12 @@ export const createLandingScene = (
   const pulseOrigin = new Vector2()
   const viewport = new Vector2()
   const boat = createLandingBoat(scene)
+  const goldenThread = createGoldenThread(scene)
+  const mountainShines = createMountainShines(scene, container, reducedMotion)
   // Handle a texture error even if particle fetching is still in progress.
   const boatReady = boat.ready.then(() => null, (cause: unknown) => cause instanceof Error ? cause : new Error('Boat loading failed'))
+  const goldReady = goldenThread.ready.then(() => null, (cause: unknown) => cause instanceof Error ? cause : new Error('Gold texture loading failed'))
+  const shinesReady = mountainShines.ready.then(() => null, (cause: unknown) => cause instanceof Error ? cause : new Error('Shine texture loading failed'))
   let previousElapsed: number | undefined
 
   const layers = definitions.map((definition) => {
@@ -94,6 +101,12 @@ export const createLandingScene = (
       points.position.y = -definition.screen * viewHeight
       const { width: w, height: h } = definition.metadata[activeQuality]
       material.uniforms.uScale!.value = Math.max(viewHeight, viewWidth / (w / h))
+      if (definition.name === 'mountains') {
+        const frame = mountainFrame(viewWidth, viewHeight)
+        points.position.x = frame.x
+        points.scale.x = frame.width / (frame.height * (w / h))
+        material.uniforms.uScale!.value = frame.height
+      }
     }
     syncScroll()
   }
@@ -132,8 +145,12 @@ export const createLandingScene = (
         return result
       }))
       const boatError = await boatReady
+      const goldError = await goldReady
+      const shinesError = await shinesReady
       if (disposed || request.signal.aborted) return
       if (boatError) throw boatError
+      if (goldError) throw goldError
+      if (shinesError) throw shinesError
       // Swap both screens together, then release all geometry from the previous level.
       layers.forEach(({ points }, i) => {
         const result = data[i]!
@@ -173,8 +190,10 @@ export const createLandingScene = (
       renderer.getDrawingBufferSize(viewport)
       layers.forEach(({ definition, points, material }) => {
         points.visible = loaded && (definition.screen === 0 ? progress < 1 : progress > 0)
-        material.uniforms.uPointer!.value.set(pointer.x, pointer.y + camera.position.y - points.position.y)
-        material.uniforms.uPulseOrigin!.value.set(pulseOrigin.x, pulseOrigin.y - points.position.y)
+        material.uniforms.uPointer!.value.set((pointer.x - points.position.x) / points.scale.x,
+          pointer.y + camera.position.y - points.position.y)
+        material.uniforms.uPulseOrigin!.value.set((pulseOrigin.x - points.position.x) / points.scale.x,
+          pulseOrigin.y - points.position.y)
         material.uniforms.uPointerActive!.value = pointerActive
         material.uniforms.uPulseAge!.value = reducedMotion ? 100 : pulseAge
         material.uniforms.uTime!.value = reducedMotion ? 0 : elapsed
@@ -195,12 +214,18 @@ export const createLandingScene = (
           pointerX: pointer.x, pointerY: pointer.y + camera.position.y, pointerActive,
           radius: landingControls.radius, force: landingControls.force, ripple: landingControls.ripple,
           pulseX: pulseOrigin.x, pulseY: pulseOrigin.y, pulseAge: reducedMotion ? 100 : pulseAge,
-        }, reducedMotion)
+        }, reducedMotion, viewWidth)
+      const anchor = landingBoatLayout(moon.material.uniforms.uScale!.value,
+        moonMetadata.width / moonMetadata.height, viewWidth)
+      goldenThread.update(progress, reducedMotion ? 0 : elapsed, loaded, viewWidth, viewHeight,
+        anchor.x, anchor.y, anchor.height)
+      mountainShines.update(elapsed, loaded && progress > 0, progress, viewWidth, viewHeight)
     },
     resize,
     setQuality: (next) => { void selectQuality(next) },
     reset: () => {
       boat.reset()
+      mountainShines.reset()
       targetActive = 0
       pointerActive = 0
       pulseAge = 100
@@ -216,6 +241,8 @@ export const createLandingScene = (
       disposed = true
       loading?.abort()
       boat.dispose()
+      goldenThread.dispose()
+      mountainShines.dispose()
       window.removeEventListener('scroll', syncScroll)
       container.removeEventListener('pointermove', placePointer)
       container.removeEventListener('pointerleave', onPointerLeave)
