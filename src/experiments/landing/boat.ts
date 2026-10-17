@@ -50,8 +50,9 @@ export function createLandingBoat(scene: Scene) {
   return {
     ready,
     update(delta: number, imageScale: number, imageAspect: number, visible: boolean,
-      water: WaterInteraction, reducedMotion: boolean, viewWidth: number) {
-      const { x: anchorX, y: anchorY, height } = landingBoatLayout(imageScale, imageAspect, viewWidth)
+      water: WaterInteraction, reducedMotion: boolean, viewWidth: number,
+      placement?: { x: number; y: number; height: number }) {
+      const { x: anchorX, y: anchorY, height } = placement ?? landingBoatLayout(imageScale, imageAspect, viewWidth)
       motion.update(delta, anchorX, anchorY, height * aspect, water, boatControls.response, reducedMotion)
       group.visible = textureReady && visible && boatControls.visible
       group.position.set(anchorX + motion.x, anchorY + motion.y, 0.15)

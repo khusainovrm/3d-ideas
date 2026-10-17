@@ -12,10 +12,11 @@ import mountainLowUrl from './mountains-low.generated.bin?url'
 import mountainMediumUrl from './mountains-medium.generated.bin?url'
 import mountainHighUrl from './mountains-high.generated.bin?url'
 import { loadParticleData } from './particleData'
-import { createLandingBoat, landingBoatLayout } from './boat'
+import { boatControls, createLandingBoat } from './boat'
 import { createGoldenThread } from './goldenThread'
 import { createMountainShines } from './mountainShines'
 import { mountainFrame } from './mountainComposition'
+import type { MountainFrame } from './mountainComposition'
 import vertexShader from './shaders/particles.vert.glsl?raw'
 import fragmentShader from './shaders/particles.frag.glsl?raw'
 
@@ -37,7 +38,7 @@ export const createLandingScene = (
   onError: (cause: Error) => void,
   onLoading: () => void,
 ): SceneFactory<OrthographicCamera> => ({ scene, camera, renderer, container, quality, reducedMotion }) => {
-  scene.background = new Color('#000000')
+  scene.background = new Color('#0d0807')
   camera.position.set(0, 0, 10)
   camera.lookAt(0, 0, 0)
 
@@ -48,7 +49,22 @@ export const createLandingScene = (
   let progress = 0
   let viewWidth = 1
   let viewHeight = 1
-  const page = container.closest<HTMLElement>('.landing')
+  const page = container.closest<HTMLElement>('.landing__journey')
+  let heroPixels = 800
+  let scrollPixels = 0
+  let stageVisible = true
+  let mountains: MountainFrame = mountainFrame(1, 1)
+  const boatPlacement = () => {
+    const mobile = container.clientWidth <= 600
+    const tablet = container.clientWidth <= 1100
+    const units = viewHeight / Math.max(1, container.clientHeight)
+    const height = heroPixels * units * (mobile ? 0.188 : tablet ? 0.204 : 0.225) * boatControls.height / 0.18
+    return {
+      x: ((mobile ? 0.76 : tablet ? 0.80 : 0.86) + boatControls.x - 0.85 - 0.5) * viewWidth,
+      y: viewHeight / 2 - heroPixels * units * (0.79 + boatControls.y - 0.85),
+      height,
+    }
+  }
   const pointer = new Vector2()
   const target = new Vector2()
   let pointerActive = 0
@@ -88,26 +104,53 @@ export const createLandingScene = (
     return { definition, points, material }
   })
 
+  // UV of the reflection's upper edge in moon path.png (origin at top left).
+  // Anchor the water to the hull instead of an independent responsive DOM frame.
+  const placeMoonPath = (anchor: { x: number; y: number; height: number }) => {
+    const moon = layers.find((layer) => layer.definition.name === 'moon path')!
+    const metadata = moon.definition.metadata[activeQuality]
+    const height = anchor.height / 0.225
+    const width = height * metadata.width / metadata.height
+    moon.points.position.set(anchor.x - (0.82 - 0.5) * width,
+      anchor.y + (0.83 - 0.5) * height - anchor.height * 0.02, 0)
+    moon.points.scale.x = 1
+    moon.material.uniforms.uScale!.value = height
+  }
+
   const syncScroll = (): void => {
     if (!page) return
+    const rect = page.getBoundingClientRect()
+    stageVisible = rect.bottom > 0 && rect.top < container.clientHeight
     const distance = Math.max(1, page.offsetHeight - container.clientHeight)
-    progress = Math.max(0, Math.min(1, -page.getBoundingClientRect().top / distance))
-    camera.position.y = -progress * viewHeight
+    scrollPixels = Math.max(0, Math.min(distance, -rect.top))
+    const start = Math.max(0, heroPixels * (0.79 + boatControls.y - 0.85) - container.clientHeight * 0.8)
+    progress = Math.max(0, Math.min(1, (scrollPixels - start) / Math.max(1, distance - start)))
+    camera.position.y = -scrollPixels / Math.max(1, container.clientHeight) * viewHeight
   }
   const resize = (width: number, height: number): void => {
     viewHeight = camera.top - camera.bottom
     viewWidth = viewHeight * width / Math.max(1, height)
-    for (const { definition, points, material } of layers) {
-      points.position.y = -definition.screen * viewHeight
-      const { width: w, height: h } = definition.metadata[activeQuality]
-      material.uniforms.uScale!.value = Math.max(viewHeight, viewWidth / (w / h))
-      if (definition.name === 'mountains') {
-        const frame = mountainFrame(viewWidth, viewHeight)
-        points.position.x = frame.x
-        points.scale.x = frame.width / (frame.height * (w / h))
-        material.uniforms.uScale!.value = frame.height
-      }
+    heroPixels = page?.querySelector<HTMLElement>('.od-hero')?.offsetHeight ?? height
+    const pageRect = page?.getBoundingClientRect()
+    const frameFor = (selector: string): MountainFrame => {
+      const rect = page?.querySelector<HTMLElement>(selector)?.getBoundingClientRect()
+      if (!rect || !pageRect) return mountainFrame(viewWidth, viewHeight)
+      const unit = viewHeight / Math.max(1, height)
+      return { x: (rect.left - pageRect.left + rect.width / 2 - width / 2) * unit,
+        y: viewHeight / 2 - (rect.top - pageRect.top + rect.height / 2) * unit,
+        width: rect.width * unit, height: rect.height * unit }
     }
+    mountains = frameFor('.landing__mountain-layout')
+    for (const { definition, points, material } of layers) {
+      if (definition.name === 'moon path') continue
+      const { width: w, height: h } = definition.metadata[activeQuality]
+      const frame = definition.name === 'mountains' ? mountains
+        : frameFor('.landing__sky-layout')
+      points.position.set(frame.x, frame.y, 0)
+      points.scale.x = frame.width / (frame.height * (w / h))
+      material.uniforms.uScale!.value = frame.height
+    }
+    placeMoonPath(boatPlacement())
     syncScroll()
   }
   resize(container.clientWidth, container.clientHeight)
@@ -181,15 +224,20 @@ export const createLandingScene = (
 
   return {
     update: ({ elapsed, delta }) => {
+      scene.visible = stageVisible
+      if (!stageVisible) return
       const response = 1 - Math.exp(-delta * 13)
       pointer.lerp(target, response)
       pointerActive += (targetActive - pointerActive) * response
       const motionDelta = previousElapsed === undefined ? delta : Math.min(0.1, Math.max(0, elapsed - previousElapsed))
       previousElapsed = elapsed
       if (pulseAge < 100) pulseAge += motionDelta
+      const anchor = boatPlacement()
+      placeMoonPath(anchor)
       renderer.getDrawingBufferSize(viewport)
       layers.forEach(({ definition, points, material }) => {
-        points.visible = loaded && (definition.screen === 0 ? progress < 1 : progress > 0)
+        points.visible = loaded && Math.abs(points.position.y - camera.position.y)
+          < (viewHeight + material.uniforms.uScale!.value) / 2
         material.uniforms.uPointer!.value.set((pointer.x - points.position.x) / points.scale.x,
           pointer.y + camera.position.y - points.position.y)
         material.uniforms.uPulseOrigin!.value.set((pulseOrigin.x - points.position.x) / points.scale.x,
@@ -209,17 +257,18 @@ export const createLandingScene = (
       const moon = layers.find((layer) => layer.definition.name === 'moon path')!
       const moonMetadata = moon.definition.metadata[activeQuality]
       boat.update(motionDelta, moon.material.uniforms.uScale!.value, moonMetadata.width / moonMetadata.height,
-        loaded && progress < 1, {
+        loaded, {
           time: reducedMotion ? 0 : elapsed,
           pointerX: pointer.x, pointerY: pointer.y + camera.position.y, pointerActive,
           radius: landingControls.radius, force: landingControls.force, ripple: landingControls.ripple,
           pulseX: pulseOrigin.x, pulseY: pulseOrigin.y, pulseAge: reducedMotion ? 100 : pulseAge,
-        }, reducedMotion, viewWidth)
-      const anchor = landingBoatLayout(moon.material.uniforms.uScale!.value,
-        moonMetadata.width / moonMetadata.height, viewWidth)
+        }, reducedMotion, viewWidth, anchor)
       goldenThread.update(progress, reducedMotion ? 0 : elapsed, loaded, viewWidth, viewHeight,
-        anchor.x, anchor.y, anchor.height)
-      mountainShines.update(elapsed, loaded && progress > 0, progress, viewWidth, viewHeight)
+        anchor.x, anchor.y, anchor.height, { mountains, compact: container.clientWidth <= 1100,
+          ballRadius: 16 * viewHeight / container.clientHeight,
+          ballGap: container.clientWidth <= 600 ? 0.25 : container.clientWidth <= 1100 ? 0.36 : 0.45,
+          bottomY: viewHeight / 2 - (page?.offsetHeight ?? container.clientHeight * 2) / container.clientHeight * viewHeight })
+      mountainShines.update(elapsed, loaded, scrollPixels / container.clientHeight, viewWidth, viewHeight, mountains)
     },
     resize,
     setQuality: (next) => { void selectQuality(next) },

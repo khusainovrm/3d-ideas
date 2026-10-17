@@ -5,6 +5,9 @@ import {
 import type { Scene } from 'three'
 import ballUrl from './assets/ball.png?url'
 import { mountainPoint } from './mountainComposition'
+import type { MountainFrame } from './mountainComposition'
+
+interface RouteComposition { mountains: MountainFrame; bottomY: number; compact?: boolean; ballRadius?: number; ballGap?: number }
 
 const SEGMENTS = 900
 const SIDES = 6
@@ -81,30 +84,48 @@ export function createGoldenThread(scene: Scene) {
   let positions: Vector3[] = []
   let layoutKey = ''
 
-  function layout(width: number, height: number, anchorX: number, anchorY: number, boatHeight: number) {
+  function layout(width: number, height: number, anchorX: number, anchorY: number, boatHeight: number, composition?: RouteComposition) {
     const key = [width, height, anchorX, anchorY, boatHeight, ballControls.size,
-      ballControls.startX, ballControls.startY, threadControls.width, threadControls.endX].join(':')
+      ballControls.startX, ballControls.startY, threadControls.width, threadControls.endX,
+      composition?.mountains.x, composition?.mountains.y, composition?.mountains.width,
+      composition?.mountains.height, composition?.bottomY, composition?.compact,
+      composition?.ballRadius, composition?.ballGap].join(':')
     if (layoutKey === key) return
     layoutKey = key
-    const radius = Math.min(width * 0.031, height * 0.026) * ballControls.size
+    const radius = (composition?.ballRadius ?? Math.min(width * 0.031, height * 0.026)) * ballControls.size
     ball.scale.setScalar(radius)
-    const startX = Math.max(-width * 0.43, anchorX - boatHeight * 0.45 - radius + width * ballControls.startX)
+    const startX = Math.max(-width * 0.43, anchorX - boatHeight * (composition?.ballGap ?? 0.45) - radius + width * ballControls.startX)
     const verticalInset = radius * 128 / 124 + height * 0.015
-    const startY = Math.max(-height / 2 + verticalInset,
-      Math.min(height / 2 - verticalInset, anchorY + radius * 0.65 - height * ballControls.startY))
+    const desiredStartY = anchorY + radius * 0.65 - height * ballControls.startY
+    const startY = composition ? desiredStartY : Math.max(-height / 2 + verticalInset,
+      Math.min(height / 2 - verticalInset, desiredStartY))
     const z = 0.5
     const path = new CurvePath<Vector3>()
     const point = (x: number, y: number) => {
-      const position = mountainPoint(x, y, width, height, z)
+      const position = mountainPoint(x, y, width, height, z, composition?.mountains)
       // Wide screens enlarge the background image; the route must still fit
       // inside the two viewport heights through which the camera travels.
-      position.y = (-0.56 - y * 0.95) * height
+      if (!composition) position.y = (-0.56 - y * 0.95) * height
       return position
     }
     const entry = point(0.49, 0.007)
-    path.add(new CubicBezierCurve3(new Vector3(startX, startY, z),
-      new Vector3(startX - width * 0.20, startY - height * 0.07, z),
-      new Vector3(entry.x - width * 0.28, entry.y + height * 0.035, z), entry))
+    if (composition?.compact) {
+      // Pass along the right gutter while the introductory copy occupies the screen.
+      const edgeX = width / 2 - radius - width * 0.01
+      const span = startY - entry.y
+      const upper = new Vector3(edgeX, startY - span * 0.18, z)
+      const lower = new Vector3(edgeX, entry.y + span * 0.1, z)
+      path.add(new CubicBezierCurve3(new Vector3(startX, startY, z),
+        new Vector3(startX, startY - span * 0.08, z), new Vector3(edgeX, upper.y + span * 0.04, z), upper))
+      path.add(new CubicBezierCurve3(upper, new Vector3(edgeX, upper.y - span * 0.15, z),
+        new Vector3(edgeX, lower.y + span * 0.15, z), lower))
+      path.add(new CubicBezierCurve3(lower, new Vector3(edgeX, entry.y + span * 0.03, z),
+        new Vector3(entry.x + width * 0.1, entry.y + span * 0.02, z), entry))
+    } else {
+      path.add(new CubicBezierCurve3(new Vector3(startX, startY, z),
+        new Vector3(startX - width * 0.20, startY - height * 0.07, z),
+        new Vector3(entry.x - width * 0.28, entry.y + height * 0.035, z), entry))
+    }
     // Independent Bezier handles preserve the asymmetric loops and sharp lower fold.
     const curves = [
       [0.49, 0.007, 0.42, 0.033, 0.37, 0.065, 0.37, 0.09],
@@ -119,7 +140,7 @@ export function createGoldenThread(scene: Scene) {
         point(c[4]!, c[5]!), point(c[6]!, c[7]!)))
     }
     const lowerLeft = new Vector3(width * (threadControls.endX - 0.5),
-      Math.max(point(0.32, 0.95).y, -height * 1.5 + verticalInset), z)
+      Math.max(point(0.32, 0.95).y, (composition?.bottomY ?? -height * 1.5) + verticalInset), z)
     path.add(new CubicBezierCurve3(point(0.91, 0.83), point(0.94, 0.88),
       new Vector3(lowerLeft.x + width * 0.10, Math.max(point(0.42, 0.94).y, lowerLeft.y), z), lowerLeft))
     const horizontalLimit = width / 2 - radius - width * 0.01
@@ -141,8 +162,8 @@ export function createGoldenThread(scene: Scene) {
   return {
     ready,
     update(progress: number, time: number, visible: boolean, width: number, height: number,
-      anchorX: number, anchorY: number, boatHeight: number) {
-      layout(width, height, anchorX, anchorY, boatHeight)
+      anchorX: number, anchorY: number, boatHeight: number, composition?: RouteComposition) {
+      layout(width, height, anchorX, anchorY, boatHeight, composition)
       const scroll = Math.max(0, Math.min(1, progress))
       const targetY = positions[0]!.y + (positions[SEGMENTS]!.y - positions[0]!.y) * scroll
       // The path descends monotonically. Seek by height rather than arc length

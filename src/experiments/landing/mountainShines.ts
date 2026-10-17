@@ -3,6 +3,7 @@ import type { Scene } from 'three'
 import shineUrl from './assets/shine.png?url'
 import './mountainShines.css'
 import { mountainPoint } from './mountainComposition'
+import type { MountainFrame } from './mountainComposition'
 
 const anchors = [
   { x: 0.205, y: 0.252, size: 0.7 },
@@ -91,11 +92,11 @@ export function createMountainShines(scene: Scene, container: HTMLElement, reduc
 
   return {
     ready: texturePromise,
-    update(time: number, visible: boolean, progress: number, width: number, height: number) {
+    update(time: number, visible: boolean, progress: number, width: number, height: number, frame?: MountainFrame) {
       const pixelWidth = container.clientWidth
       const pixelHeight = container.clientHeight
       markers.forEach(({ anchor, mesh, material, button, hovered, focused }, index) => {
-        const position = mountainPoint(anchor.x, anchor.y, width, height, 0.8)
+        const position = mountainPoint(anchor.x, anchor.y, width, height, 0.8, frame)
         if (index === 3) position.x = (anchor.x - 0.5) * width
         const x = (position.x / width + 0.5) * pixelWidth
         const y = (0.5 - position.y / height - progress) * pixelHeight

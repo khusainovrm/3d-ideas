@@ -1,5 +1,7 @@
 import { Vector3 } from 'three'
 
+export interface MountainFrame { x: number; y: number; width: number; height: number }
+
 // The supplied mockup shows the right-hand mountain group of the source image.
 // Keep the route, stars and particle image in the same coordinate system.
 export function mountainFrame(width: number, height: number) {
@@ -10,8 +12,7 @@ export function mountainFrame(width: number, height: number) {
   return { x: (width - imageWidth) / 2, y: -height, width: imageWidth, height: imageHeight }
 }
 
-export function mountainPoint(x: number, y: number, width: number, height: number, z = 0.5) {
-  const frame = mountainFrame(width, height)
+export function mountainPoint(x: number, y: number, width: number, height: number, z = 0.5, frame = mountainFrame(width, height)) {
   const imageX = 0.515 + x * 0.485
   const imageY = 0.06 + y * 0.95
   return new Vector3(frame.x + (imageX - 0.5) * frame.width,
