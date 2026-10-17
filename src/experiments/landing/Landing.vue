@@ -7,6 +7,7 @@ import { boatControls } from './boat'
 import { ballControls, ballState, threadControls } from './goldenThread'
 import LandingProgram from './LandingProgram.vue'
 import LandingRegistration from './LandingRegistration.vue'
+import CalmSea from './CalmSea.vue'
 import titleArt from './assets/design/title.webp'
 import brand from './assets/design/partner-brand.webp'
 import column from './assets/design/column.webp'
@@ -15,9 +16,7 @@ import helmet from './assets/design/helmet.webp'
 import rtk from './assets/design/rtk.webp'
 import turbo from './assets/design/turbo.webp'
 import divider from './assets/design/divider.webp'
-import water from './assets/design/water.webp'
 import glow from './assets/design/glow.webp'
-import boatImage from './assets/boat.generated.webp'
 import './landing.css'
 
 let previousTitle = ''
@@ -144,7 +143,7 @@ defineExpose({ container, paneHost })
     <section id="game" class="od-game od-section" aria-labelledby="game-title">
       <h2 id="game-title">Пока ждёшь — <em>различи<br>сигналы в шуме</em></h2>
       <div class="od-game__row"><div class="od-game__placeholder">Здесь будет<br>баннер с визуалом<br>игры</div><button class="od-outline" type="button" @click="openPlaceholder('Различи сигналы в шуме', 'Игра готовится к запуску. Здесь появится переход к интерактивному путешествию.')">К игре <span aria-hidden="true">›</span></button></div>
-      <div class="od-game__sea" aria-hidden="true"><img :src="water" class="od-game__water" alt=""><img :src="boatImage" class="od-game__boat" alt=""></div>
+      <CalmSea />
     </section>
 
     <section class="od-partners od-section" aria-labelledby="partners-title"><img :src="glow" class="od-partners__glow" alt=""><h2 id="partners-title">Партнёры<br><span class="desktop-tablet-only">конференции</span><span class="mobile-only">мероприятия</span></h2><div class="od-partners__grid"><template v-for="n in 2" :key="n"><img :src="rtk" alt="РТК-ЦОД"><img :src="brand" alt="Ростелеком. Информационные технологии"><img :src="turbo" alt="Турбо облако"></template></div></section>

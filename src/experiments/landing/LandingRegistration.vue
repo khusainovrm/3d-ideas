@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { nextTick, ref } from 'vue'
 import ball from './assets/ball.png'
+import RegistrationSuccess from './RegistrationSuccess.vue'
 defineEmits<{ policy: [] }>()
-const notice = ref('')
 const fields = ref({ name: '', email: '', company: '', role: '', consent: false })
-function submit() {
-  notice.value = 'Регистрация пока не открыта. Данные не отправлены. Следите за обновлениями конференции.'
+const success = ref<InstanceType<typeof RegistrationSuccess> | null>(null)
+const registeredName = ref('')
+async function submit() {
+  registeredName.value = fields.value.name.trim()
+  await nextTick()
+  success.value?.show()
 }
 </script>
 <template>
@@ -18,7 +22,7 @@ function submit() {
       <label>Должность*<input v-model="fields.role" name="role" autocomplete="organization-title" required maxlength="160" placeholder="Ваша должность"></label>
       <label class="od-form__consent"><input v-model="fields.consent" name="consent" type="checkbox" required><span>Нажимая «Отправить», вы соглашаетесь на обработку указанных персональных данных в соответствии с <button type="button" class="od-inline-link" @click="$emit('policy')">Политикой в отношении обработки персональных данных</button></span></label>
       <div class="od-form__action"><button type="submit" class="od-ribbon">Отправить</button><img :src="ball" alt=""></div>
-      <p v-if="notice" class="od-form__notice" role="status">{{ notice }}</p>
     </form>
+    <RegistrationSuccess ref="success" :name="registeredName" />
   </section>
 </template>

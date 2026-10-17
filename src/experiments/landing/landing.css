@@ -108,8 +108,11 @@
 .od-game__placeholder { width: 510px; height: 220px; display: flex; flex-direction: column; justify-content: center; padding-left: 100px; flex-shrink: 0; background: #3a3636; color: #c0bbba; text-transform: uppercase; font-size: 20px; font-style: italic; line-height: 1.2; letter-spacing: .03em; }
 .od-game__row .od-outline { width: 220px; }
 .od-game__sea { position: absolute; right: -50px; bottom: -30px; width: 1150px; height: 340px; pointer-events: none; }
+.od-game__sea canvas { display: block; width: 100%; height: 100%; }
 .od-game__water { position: absolute; bottom: -80px; left: 0; width: 100%; }
 .od-game__boat { position: absolute; right: 270px; bottom: 45px; width: 120px; height: 210px; object-fit: contain; }
+.od-game__boat-hit { position: absolute; z-index: 2; right: 165px; bottom: 0; width: 310px; height: 255px; padding: 0; border: 0; background: transparent; pointer-events: auto; cursor: pointer; }
+.od-game__boat-hit:focus-visible { outline: 1px solid #e7bb3b; outline-offset: -8px; }
 .od-partners { min-height: 550px; padding-top: 11px; }
 .od-partners__grid { display: grid; grid-template-columns: repeat(3, 1fr); align-items: center; column-gap: 100px; row-gap: 20px; margin-top: 70px; }
 .od-partners__grid img { width: 100%; max-height: 145px; object-fit: contain; }
@@ -198,8 +201,9 @@
  .od-game__row { gap: 32px; }
  .od-game__placeholder { width: 380px; height: 260px; padding-left: 47px; }
  .od-game__row .od-outline { width: 180px; min-width: 150px; font-size: 16px; }
- .od-game__sea { width: 950px; right: -150px; bottom: -25px; height: 350px; }
+ .od-game__sea { width: 950px; right: -150px; bottom: 20px; height: 350px; }
  .od-game__boat { right: 270px; width: 90px; height: 165px; }
+ .od-game__boat-hit { right: 185px; width: 260px; height: 225px; }
  .od-partners { min-height: 410px; padding-top: 0; }
  .od-partners__grid { margin-top: 70px; column-gap: 32px; row-gap: 12px; }
  .od-partners__grid img { height: 100px; }
@@ -281,8 +285,9 @@
  .od-game__row { display: block; margin-top: 32px; }
  .od-game__placeholder { width: 100%; height: 266px; padding-left: 24px; font-size: 20px; }
  .od-game__row .od-outline { margin-top: 24px; min-width: 160px; width: 160px; font-size: 14px; min-height: 42px; }
- .od-game__sea { width: 880px; right: -260px; bottom: -12px; height: 230px; }
- .od-game__boat { display: none; }
+ .od-game__sea { width: 880px; right: -260px; bottom: 40px; height: 230px; }
+ .od-game__boat { right: 72px; bottom: 16px; width: 82px; height: 142px; }
+ .od-game__boat-hit { right: 0; bottom: 0; width: 220px; height: 205px; }
  .od-game__water { bottom: -90px; }
  .od-partners { min-height: 301px; }
  .od-partners__grid { grid-template-columns: 1fr 1fr; gap: 0 24px; margin-top: 50px; }
