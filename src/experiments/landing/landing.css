@@ -12,7 +12,7 @@
 .landing img { max-width: 100%; }
 .od-section { position: relative; padding-inline: var(--gutter); scroll-margin-top: 28px; }
 .landing__journey { position: relative; height: 1650px; }
-.landing__scene-track { position: absolute; inset: 0; }
+.landing__scene-track { position: absolute; inset: 0; z-index: 0; }
 .landing__viewport { position: sticky; top: 0; height: 100svh; width: 100%; overflow: hidden; }
 .landing__canvas { position: absolute; inset: 0; }
 .landing__canvas canvas { display: block; width: 100%; height: 100%; }
@@ -31,7 +31,7 @@
 .od-outline:hover { border-color: #e7bb3b; color: #e7bb3b; }
 .od-ribbon { display: inline-flex; align-items: center; justify-content: center; border: 0; min-width: 210px; height: 70px; padding: 16px 36px; background: url('./assets/design/button.webp') center/100% 100% no-repeat; color: #171411 !important; font-weight: 600 !important; font-size: 18px; }
 .od-ribbon:hover { filter: sepia(.35) brightness(1.12); }
-.od-hero { height: 800px; padding-top: 166px; pointer-events: none; }
+.od-hero { z-index: 1; height: 800px; padding-top: 166px; pointer-events: none; }
 .od-hero a { pointer-events: auto; }
 .od-hero__eyebrow { font-size: 34px !important; line-height: 1.2 !important; text-transform: uppercase; letter-spacing: .045em; }
 .od-hero h1 { width: min(900px, calc(100% + 50px)); margin: 12px 0 44px; line-height: 0; }
@@ -43,7 +43,7 @@
 .od-marquee__track { display: flex; width: max-content; transform: translateX(-30px); }
 .od-marquee span { display: flex; align-items: center; gap: 40px; white-space: nowrap; padding-right: 40px; }
 .od-marquee img { width: 33px; height: 24px; object-fit: contain; }
-.od-mountains { height: 850px; padding-top: 255px; pointer-events: none; }
+.od-mountains { z-index: 1; height: 850px; padding-top: 255px; pointer-events: none; }
 .od-mountains__copy { max-width: 600px; }
 .od-mountains p { margin-top: 28px; }
 .od-about { min-height: 425px; padding-top: 83px; display: flex; justify-content: space-between; gap: 70px; }
@@ -214,6 +214,7 @@
 }
 @media (max-width: 600px) {
  .landing { --gutter: 32px; }
+ .landing__viewport { height: 100vh; height: 100lvh; }
  .landing h2 { font-size: 28px; line-height: 1.15; }
  .landing p { font-size: 14px; line-height: 1.72; }
  .landing__journey { height: 1635px; }
